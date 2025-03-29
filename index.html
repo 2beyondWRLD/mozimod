@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oromozi Scavenger</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #phaser-game {
+      width: 800px;
+      height: 600px;
+    }
+  </style>
+</head>
+<body>
+  <div id="phaser-game"></div>
+
+  <!-- Phaser loaded explicitly from CDN (global) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+
+  <!-- Your game scenes -->
+  <script type="module" src="src/scenes/MenuScene.js"></script>
+  <script type="module" src="src/scenes/FishingScene.js"></script>
+  <script type="module" src="src/scenes/CampingScene.js"></script>
+  <script type="module" src="src/scenes/ScavengerMode.js"></script>
+  <script type="module" src="src/scenes/VillageCommons.js"></script>
+
+  <!-- Main entry point -->
+  <script type="module" src="main.js"></script>
+</body>
+</html>
