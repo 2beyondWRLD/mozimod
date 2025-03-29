@@ -45,32 +45,49 @@ export function showDialog(scene, text) {
   const boxW = 260, boxH = 200;
   const boxX = (scene.game.config.width - boxW) / 2;
   const boxY = (scene.game.config.height - boxH) / 2;
-
+  
   if (!scene.dialogBg) {
     scene.dialogBg = scene.add.graphics().setDepth(1600);
   }
-  scene.dialogBg.clear().fillStyle(0x000000, 0.8).fillRect(boxX, boxY, boxW, boxH).setVisible(true);
-
+  
+  scene.dialogBg.clear();
+  scene.dialogBg.fillStyle(0x000000, 0.8);
+  scene.dialogBg.fillRect(boxX, boxY, boxW, boxH);
+  scene.dialogBg.lineStyle(2, 0xffffff, 1);
+  scene.dialogBg.strokeRect(boxX, boxY, boxW, boxH);
+  
   if (!scene.dialogText) {
     scene.dialogText = scene.add.text(boxX + 10, boxY + 10, "", {
       font: "14px Arial",
       fill: "#ffffff",
-      wordWrap: { width: 240 },
+      wordWrap: { width: boxW - 20 },
       stroke: "#000000",
       strokeThickness: 3
     }).setDepth(1601);
   }
+  
   scene.dialogText.setPosition(boxX + 10, boxY + 10);
-  scene.dialogText.setText(text).setVisible(true);
+  scene.dialogText.setText(text);
+  scene.dialogText.setStyle({
+    font: "14px Arial",
+    fill: "#ffffff",
+    wordWrap: { width: boxW - 20 },
+    stroke: "#000000",
+    strokeThickness: 3
+  });
+  
+  scene.dialogBg.setVisible(true);
+  scene.dialogText.setVisible(true);
+  scene.dialogBg.setScrollFactor(0);
+  scene.dialogText.setScrollFactor(0);
 }
 
 export function hideDialog(scene) {
-  if (scene.dialogBg) {
-    scene.dialogBg.clear().setVisible(false);
-  }
-  if (scene.dialogText) {
-    scene.dialogText.setVisible(false);
-  }
+  if (!scene.dialogBg || !scene.dialogText) return;
+  
+  scene.dialogBg.clear();
+  scene.dialogBg.setVisible(false);
+  scene.dialogText.setVisible(false);
   updateHUD(scene);
 }
 
@@ -164,31 +181,52 @@ export function createScrollableMenu(scene, title, options) {
 }
 
 export function clearButtons(scene) {
-  if (scene.buttons) {
-    scene.buttons.forEach(btn => btn.destroy());
+  if (!scene.buttons) {
     scene.buttons = [];
+    return;
   }
+  
+  scene.buttons.forEach(btn => btn.destroy());
+  scene.buttons = [];
 }
 
 // Create a simple set of buttons with labels and callbacks
 export function createButtons(scene, options) {
-  scene.buttons = scene.buttons || [];
+  clearButtons(scene);
   const boxW = 260, boxH = 200;
   const boxX = (scene.game.config.width - boxW) / 2;
   const boxY = (scene.game.config.height - boxH) / 2;
   
+  scene.buttons = scene.buttons || [];
+  
   options.forEach((option, i) => {
-    const btn = scene.add.text(boxX + 10, boxY + 80 + i * 30, option.label, {
-      font: "16px Arial",
-      fill: "#ffffff",
+    const btn = scene.add.text(boxX + 10, boxY + 80 + i * 25, option.label, { 
+      font: "14px Arial", 
+      fill: "#ffff00",
       stroke: "#000000",
       strokeThickness: 2
-    }).setDepth(1601).setInteractive({ useHandCursor: true });
+    });
     
-    btn.on("pointerdown", option.callback);
-    btn.on("pointerover", () => btn.setStyle({ fill: "#ff9900" }));
-    btn.on("pointerout", () => btn.setStyle({ fill: "#ffffff" }));
+    btn.setDepth(1601);
+    btn.setInteractive({ useHandCursor: true });
+    
+    // Add button effects
+    btn.on("pointerover", () => {
+      btn.setStyle({ fill: "#ff9900" });
+      btn.setScale(1.1);
+    });
+    
+    btn.on("pointerout", () => {
+      btn.setStyle({ fill: "#ffff00" });
+      btn.setScale(1);
+    });
+    
+    btn.on("pointerdown", () => {
+      btn.setStyle({ fill: "#ffffff" });
+      scene.time.delayedCall(100, option.callback);
+    });
     
     scene.buttons.push(btn);
+    btn.setScrollFactor(0);
   });
 }

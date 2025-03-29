@@ -72,15 +72,17 @@ export function createClickableExclamation(scene) {
   const worldW = scene.background ? scene.background.displayWidth : 800;
   const worldH = scene.background ? scene.background.displayHeight : 600;
   
+  // Better placement buffer
   const edgeBuffer = 100;
+  const minDistanceFromPlayer = 150;
   
   let validPosition = false;
   let exX = 0, exY = 0;
-  let attempts = 0;
-  const MAX_ATTEMPTS = 50;
+  let tries = 0;
+  const MAX_TRIES = 50;
   
-  while (!validPosition && attempts < MAX_ATTEMPTS) {
-    attempts++;
+  while (!validPosition && tries < MAX_TRIES) {
+    tries++;
     exX = Phaser.Math.Between(edgeBuffer, worldW - edgeBuffer);
     exY = Phaser.Math.Between(edgeBuffer, worldH - edgeBuffer);
     
@@ -90,33 +92,38 @@ export function createClickableExclamation(scene) {
       playerDist = Phaser.Math.Distance.Between(scene.player.x, scene.player.y, exX, exY);
     }
     
-    // Check for obstacle overlap
-    const hasObstacle = overlapsObstacle(scene, exX, exY, 40);
-    
-    if (playerDist >= 100 && !hasObstacle) {
+    if (playerDist >= minDistanceFromPlayer && !overlapsObstacle(scene, exX, exY, 50)) {
       validPosition = true;
     }
   }
   
   if (!validPosition) return;
   
-  // Create the exclamation point and hitbox
-  const exclamation = scene.add.image(exX, exY, 'exclamation')
-    .setScale(scene.bgScale * 4)
-    .setDepth(900)
-    .setTint(0xffff00);
+  const ex = scene.add.image(exX, exY, "exclamation");
+  ex.setScale(scene.bgScale * 4);
+  ex.setDepth(900);
+  ex.setTint(0xffff00);
   
-  const hitbox = scene.add.rectangle(exX, exY, 50, 50, 0xffff00, 0.2)
-    .setInteractive()
-    .setDepth(901);
-  
-  hitbox.exclamationSprite = exclamation;
-  
-  hitbox.on('pointerdown', function() {
-    showDialog(scene, "You discovered something interesting!");
-    exclamation.destroy();
-    hitbox.destroy();
+  // Add pulsing animation to draw attention
+  scene.tweens.add({
+    targets: ex,
+    scale: scene.bgScale * 4.5,
+    duration: 500,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut'
   });
+  
+  // Make it interactive
+  ex.setInteractive({ useHandCursor: true });
+  ex.on('pointerdown', () => {
+    showDialog(scene, "You discovered something interesting!");
+    ex.destroy();
+  });
+  
+  // Store reference if needed
+  if (!scene.exclamationSprites) scene.exclamationSprites = [];
+  scene.exclamationSprites.push(ex);
 }
 
 function overlapsObstacle(scene, x, y, radius) {
@@ -125,6 +132,70 @@ function overlapsObstacle(scene, x, y, radius) {
     const dist = Phaser.Math.Distance.Between(x, y, obstacle.x, obstacle.y);
     return dist < radius;
   });
+}
+
+export function spawnMultipleExclamations(scene, count) {
+  // Completely abort if scene isn't fully initialized
+  if (!scene || !scene.add || !scene.sys || !scene.sys.displayList) {
+    console.error("Scene not ready for spawning exclamations - missing core components");
+    return;
+  }
+  
+  if (scene.currentZone === "Village") return;
+  
+  // Scale exclamation count based on player progress
+  const totalExclamations = count + Math.floor((scene.promptCount || 0) / 5);
+  const actualCount = Math.min(totalExclamations, 6); // Reduce count to prevent overload
+  
+  console.log(`Attempting to spawn ${actualCount} exclamations`);
+  
+  // Use safer loop with try/catch
+  for (let i = 0; i < actualCount; i++) {
+    try {
+      createClickableExclamation(scene);
+    } catch (error) {
+      console.error("Error spawning exclamation:", error);
+    }
+  }
+}
+
+export function getOverlappingExclamation(scene) {
+  // First check exclamation physics group
+  if (scene.exclamations && scene.player) {
+    try {
+      const playerRect = scene.player.getBounds();
+      const exList = scene.exclamations.getChildren();
+      
+      for (let ex of exList) {
+        if (!ex || !ex.getBounds) continue;
+        
+        if (Phaser.Geom.Intersects.RectangleToRectangle(playerRect, ex.getBounds())) {
+          return ex;
+        }
+      }
+    } catch (error) {
+      console.warn("Error checking exclamation overlaps:", error);
+    }
+  }
+  
+  // Then check sprite array if it exists
+  if (scene.exclamationSprites && scene.exclamationSprites.length > 0 && scene.player) {
+    try {
+      const playerRect = scene.player.getBounds();
+      
+      for (let ex of scene.exclamationSprites) {
+        if (!ex || !ex.getBounds) continue;
+        
+        if (Phaser.Geom.Intersects.RectangleToRectangle(playerRect, ex.getBounds())) {
+          return ex;
+        }
+      }
+    } catch (error) {
+      console.warn("Error checking sprite exclamation overlaps:", error);
+    }
+  }
+  
+  return null;
 }
 
 // Specific interaction handlers

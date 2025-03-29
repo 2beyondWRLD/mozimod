@@ -76,22 +76,73 @@ export function createFloatingText(scene, x, y, text, color = 0xffffff, fontSize
 }
 
 // Checks if a point overlaps any obstacles
-export function overlapsObstacle(scene, x, y, buffer = 40) {
-  const rect = new Phaser.Geom.Rectangle(x - buffer / 2, y - buffer / 2, buffer, buffer);
-  const obstacles = scene.obstacles?.getChildren();
-  if (!obstacles) return false;
-
-  return obstacles.some(obs => {
-    const margin = 5;
-    const obsBounds = obs.getBounds();
-    const expandedBounds = new Phaser.Geom.Rectangle(
-      obsBounds.x - margin,
-      obsBounds.y - margin,
-      obsBounds.width + margin * 2,
-      obsBounds.height + margin * 2
-    );
-    return Phaser.Geom.Intersects.RectangleToRectangle(rect, expandedBounds);
-  });
+export function overlapsObstacle(scene, x, y, buffer = 64) {
+  if (!scene || !scene.obstacles) return false;
+  
+  const halfBuffer = buffer / 2;
+  const rect = new Phaser.Geom.Rectangle(x - halfBuffer, y - halfBuffer, buffer, buffer);
+  
+  try {
+    const obstacles = scene.obstacles.getChildren();
+    if (!obstacles || !Array.isArray(obstacles)) return false;
+    
+    for (let obs of obstacles) {
+      if (!obs || !obs.getBounds) continue;
+      
+      // Add a smaller margin around obstacles for better navigation
+      const margin = 5; // Reduced from 10
+      const obsBounds = obs.getBounds();
+      const expandedBounds = new Phaser.Geom.Rectangle(
+        obsBounds.x - margin,
+        obsBounds.y - margin,
+        obsBounds.width + margin * 2,
+        obsBounds.height + margin * 2
+      );
+      
+      if (Phaser.Geom.Intersects.RectangleToRectangle(rect, expandedBounds)) {
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn("Error in collision detection:", error);
+    return false;
+  }
+  
+  // Also check for proximity to other objects of the same type
+  // but with a smaller minimum distance
+  const minDistance = buffer * 1.2; // Reduced from 1.5
+  
+  if (scene.lootCrates) {
+    try {
+      const crates = scene.lootCrates.getChildren();
+      if (crates && Array.isArray(crates)) {
+        for (let crate of crates) {
+          if (!crate || !crate.x) continue;
+          const dist = Phaser.Math.Distance.Between(x, y, crate.x, crate.y);
+          if (dist < minDistance) return true;
+        }
+      }
+    } catch (e) {
+      console.warn("Error checking crate overlaps:", e);
+    }
+  }
+  
+  if (scene.exclamations) {
+    try {
+      const exs = scene.exclamations.getChildren();
+      if (exs && Array.isArray(exs)) {
+        for (let ex of exs) {
+          if (!ex || !ex.x) continue;
+          const dist = Phaser.Math.Distance.Between(x, y, ex.x, ex.y);
+          if (dist < minDistance) return true;
+        }
+      }
+    } catch (e) {
+      console.warn("Error checking exclamation overlaps:", e);
+    }
+  }
+  
+  return false;
 }
 
 // Safely adds an item to player's inventory
@@ -114,6 +165,7 @@ export function safeRemoveFromInventory(scene, itemName, quantity = 1) {
     }
   }
 }
+
 export function hasCampingMaterials(scene) {
   const stick = scene.localInventory.find(item => item.name.toLowerCase() === "stick");
   const cloth = scene.localInventory.find(item => item.name.toLowerCase() === "cloth");

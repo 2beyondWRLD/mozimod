@@ -146,6 +146,7 @@ export function createFloatingText(scene, x, y, text, color = 0xffffff, fontSize
     onComplete: () => floatingText.destroy()
   });
 }
+
 export function getAllLootItems(scene) {
   const lootData = scene.cache.json.get("lootTable");
   if (!lootData || !lootData.zones) return ["Stick"];
@@ -154,4 +155,79 @@ export function getAllLootItems(scene) {
     lootData.zones[zone].forEach(item => allItems.add(item.name));
   });
   return Array.from(allItems);
+}
+
+// Helper function for crate spawning collision detection
+function overlapsObstacle(scene, x, y, radius) {
+  if (!scene.obstacles) return false;
+  return scene.obstacles.getChildren().some(obstacle => {
+    const dist = Phaser.Math.Distance.Between(x, y, obstacle.x, obstacle.y);
+    return dist < radius;
+  });
+}
+
+export function spawnOneLootCrate(scene) {
+  const MAX_TRIES = 100;
+  let tries = 0;
+  const worldW = scene.background.displayWidth;
+  const worldH = scene.background.displayHeight;
+  
+  // Increased minimum distance from edges for better visibility
+  const edgeBuffer = 80;
+  
+  while (tries < MAX_TRIES) {
+    tries++;
+    const crateX = Phaser.Math.Between(edgeBuffer, worldW - edgeBuffer);
+    const crateY = Phaser.Math.Between(edgeBuffer, worldH - edgeBuffer);
+    
+    // Improved collision detection with better buffer zone
+    if (!overlapsObstacle(scene, crateX, crateY, 80)) {
+      const crate = scene.lootCrates.create(crateX, crateY, "loot_crate");
+      crate.setOrigin(0.5, 0.5);
+      crate.setFrame(0); // Initial frame (intact crate)
+      crate.setScale(1);
+      crate.setDepth(900);
+      crate.setImmovable(true);
+      
+      // Health varies by zone and player level
+      const minHealth = 2 + Math.floor((scene.playerStats.level - 1) * 0.5);
+      const maxHealth = 6 + Math.floor((scene.playerStats.level - 1) * 0.8);
+      const health = Phaser.Math.Between(minHealth, maxHealth);
+      
+      // Simple tint instead of glow effect for compatibility
+      crate.setTint(0xffff77);
+      
+      crate.setData('health', health);
+      crate.setData('breaking', false);
+      crate.body.setSize(64, 64);
+      crate.body.setOffset(0, 0);
+      
+      // Add a small animation to make crates stand out
+      scene.tweens.add({
+        targets: crate,
+        y: crateY - 5,
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      
+      console.log("Crate spawned at:", crateX, crateY, "with health:", health);
+      return;
+    }
+  }
+  console.warn("Unable to place loot crate after", MAX_TRIES, "tries.");
+}
+
+export function spawnMultipleLootCrates(scene, count) {
+  if (scene.currentZone === "Village") return;
+  
+  // Scale crate count with player level for progression
+  const baseCount = count;
+  const levelBonus = Math.floor((scene.playerStats.level - 1) * 0.5);
+  const totalCrates = baseCount + levelBonus;
+  
+  for (let i = 0; i < totalCrates; i++) {
+    spawnOneLootCrate(scene);
+  }
 }
