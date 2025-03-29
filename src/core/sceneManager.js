@@ -24,8 +24,34 @@ export function preloadScene(scene, zoneData) {
 export function createScene(scene, data) {
   console.log("createScene: Received scene data:", data);
   
+  // Make sure scene.zoneList exists
+  if (!scene.zoneList || !Array.isArray(scene.zoneList)) {
+    console.warn("Zone list not found or not an array! Creating default zone list.");
+    scene.zoneList = [{
+      name: "Village",
+      mapKey: "villageMap",
+      backgroundKey: "villageCommons",
+      foregroundKey: "",
+      spawnX: 100,
+      spawnY: 100,
+      bgScale: 0.3
+    }];
+  }
+  
   // Initialize scene with zone data or fallback to default
   let defaultZone = scene.zoneList.find(z => z.name === "Village");
+  if (!defaultZone) {
+    defaultZone = scene.zoneList[0] || {
+      name: "Village",
+      mapKey: "villageMap",
+      backgroundKey: "villageCommons",
+      foregroundKey: "",
+      spawnX: 100,
+      spawnY: 100,
+      bgScale: 0.3
+    };
+  }
+  
   if (!data || !data.zone) {
     data = {
       zone: defaultZone,
@@ -271,6 +297,7 @@ function setupExplorationZoneObjects(scene, zoneData, mapData, bgScale) {
       });
     } else if (
       layer.type === "imagelayer" &&
+      zoneData.foregroundKey && 
       layer.name.toLowerCase() === zoneData.foregroundKey.toLowerCase()
     ) {
       const offX = layer.x || 0;
@@ -385,7 +412,7 @@ function handleBuildingInteraction(scene, gameObject) {
   const building = gameObject.name.toLowerCase();
 
   // Import interaction manager dynamically to avoid circular dependencies
-  import('../interaction/interactionManager.js').then(module => {
+  import('../interactions/interactionManager.js').then(module => {
     module.handleVillageContractInteraction(scene, gameObject);
   }).catch(error => {
     console.error("Failed to load interaction manager:", error);
