@@ -1,7 +1,7 @@
 // interactionManager.js
 
 import { showDialog, hideDialog, createScrollableMenu, clearButtons, showModalOverlay, hideModalOverlay, createButtons } from '../ui/uiManager.js';
-import { createSimpleEffect, createFloatingText, addToInventory, removeFromInventory, getItemData, getRandomLootForZone, getAllLootItems } from '../inventory/inventorySystem.js';
+import { createSimpleEffect, createFloatingText, addToInventory, removeFromInventory, getItemData, getRandomLootForZone, getAllLootItems, overlapsObstacle } from '../inventory/inventorySystem.js';
 import { hasCampingMaterials } from '../utils/utils.js';
 
 // Constants for narrative screens
@@ -69,71 +69,112 @@ export function handleVillageContractInteraction(scene, obj) {
 
 // Create a simple clickable exclamation point
 export function createClickableExclamation(scene) {
+  if (!scene || !scene.add) {
+    console.error("Invalid scene for creating exclamation point");
+    return;
+  }
+  
   const worldW = scene.background ? scene.background.displayWidth : 800;
   const worldH = scene.background ? scene.background.displayHeight : 600;
   
   // Better placement buffer
   const edgeBuffer = 100;
-  const minDistanceFromPlayer = 150;
   
+  // Find a valid position with a maximum number of attempts
   let validPosition = false;
   let exX = 0, exY = 0;
-  let tries = 0;
-  const MAX_TRIES = 50;
+  let attempts = 0;
+  const MAX_ATTEMPTS = 50;
   
-  while (!validPosition && tries < MAX_TRIES) {
-    tries++;
+  while (!validPosition && attempts < MAX_ATTEMPTS) {
+    attempts++;
     exX = Phaser.Math.Between(edgeBuffer, worldW - edgeBuffer);
     exY = Phaser.Math.Between(edgeBuffer, worldH - edgeBuffer);
     
     // Check distance from player
-    let playerDist = Infinity;
-    if (scene.player) {
-      playerDist = Phaser.Math.Distance.Between(scene.player.x, scene.player.y, exX, exY);
+    let tooCloseToPlayer = false;
+    if (scene.player && scene.player.x !== undefined) {
+      const playerDist = Phaser.Math.Distance.Between(scene.player.x, scene.player.y, exX, exY);
+      tooCloseToPlayer = playerDist < 100;
     }
     
-    if (playerDist >= minDistanceFromPlayer && !overlapsObstacle(scene, exX, exY, 50)) {
+    // Check for obstacle overlap
+    const hasObstacle = overlapsObstacle(scene, exX, exY, 40);
+    
+    if (!tooCloseToPlayer && !hasObstacle) {
       validPosition = true;
     }
   }
   
-  if (!validPosition) return;
+  if (!validPosition) {
+    console.warn("Could not find valid position for exclamation point");
+    return;
+  }
   
-  const ex = scene.add.image(exX, exY, "exclamation");
-  ex.setScale(scene.bgScale * 4);
-  ex.setDepth(900);
-  ex.setTint(0xffff00);
-  
-  // Add pulsing animation to draw attention
-  scene.tweens.add({
-    targets: ex,
-    scale: scene.bgScale * 4.5,
-    duration: 500,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut'
-  });
-  
-  // Make it interactive
-  ex.setInteractive({ useHandCursor: true });
-  ex.on('pointerdown', () => {
-    showDialog(scene, "You discovered something interesting!");
-    ex.destroy();
-  });
-  
-  // Store reference if needed
-  if (!scene.exclamationSprites) scene.exclamationSprites = [];
-  scene.exclamationSprites.push(ex);
+  try {
+    // First, create a visible exclamation sprite (non-interactive)
+    const exclamation = scene.add.image(exX, exY, 'exclamation');
+    exclamation.setScale(scene.bgScale * 4);
+    exclamation.setDepth(900);
+    exclamation.setTint(0xffff00);
+    
+    // Then create a rectangular hitbox for interaction (like village buildings)
+    const hitboxWidth = 50;
+    const hitboxHeight = 50;
+    const hitbox = scene.add.rectangle(
+      exX, 
+      exY,
+      hitboxWidth,
+      hitboxHeight,
+      0xffff00,
+      0.2 // Slight visibility for debugging
+    );
+    
+    // Set properties
+    hitbox.setOrigin(0.5);
+    hitbox.setDepth(901);
+    hitbox.setStrokeStyle(2, 0xffffff, 0.5);
+    
+    // Make it interactive
+    hitbox.setInteractive();
+    
+    // Store data for cleanup
+    hitbox.exclamationSprite = exclamation;
+    hitbox.name = "exclamation_hitbox";
+    
+    // Add basic click handler
+    hitbox.on('pointerdown', function() {
+      console.log("Exclamation hitbox clicked at", this.x, this.y);
+      
+      // Start narrative flow
+      import('../narrative/narrativeManager.js').then(module => {
+        scene.narrativeScreen = module.SCREEN_PROLOGUE;
+        module.showPrologue(scene);
+      });
+      
+      // Clean up
+      if (this.exclamationSprite) {
+        this.exclamationSprite.destroy();
+      }
+      this.destroy();
+    });
+    
+    // Track the hitbox
+    if (!scene.exclamationHitboxes) {
+      scene.exclamationHitboxes = [];
+    }
+    scene.exclamationHitboxes.push(hitbox);
+    
+    console.log("Created exclamation with hitbox at", exX, exY);
+    
+    return hitbox;
+  } catch (error) {
+    console.error("Error creating exclamation hitbox:", error);
+    return null;
+  }
 }
 
-function overlapsObstacle(scene, x, y, radius) {
-  if (!scene.obstacles) return false;
-  return scene.obstacles.getChildren().some(obstacle => {
-    const dist = Phaser.Math.Distance.Between(x, y, obstacle.x, obstacle.y);
-    return dist < radius;
-  });
-}
-
+// Create multiple clickable exclamation points
 export function spawnMultipleExclamations(scene, count) {
   // Completely abort if scene isn't fully initialized
   if (!scene || !scene.add || !scene.sys || !scene.sys.displayList) {
@@ -159,6 +200,7 @@ export function spawnMultipleExclamations(scene, count) {
   }
 }
 
+// Get overlapping exclamation point for interaction
 export function getOverlappingExclamation(scene) {
   // First check exclamation physics group
   if (scene.exclamations && scene.player) {
@@ -195,32 +237,24 @@ export function getOverlappingExclamation(scene) {
     }
   }
   
+  // Finally check exclamation hitboxes
+  if (scene.exclamationHitboxes && scene.exclamationHitboxes.length > 0 && scene.player) {
+    try {
+      const playerRect = scene.player.getBounds();
+      
+      for (let hitbox of scene.exclamationHitboxes) {
+        if (!hitbox || !hitbox.getBounds) continue;
+        
+        if (Phaser.Geom.Intersects.RectangleToRectangle(playerRect, hitbox.getBounds())) {
+          return hitbox;
+        }
+      }
+    } catch (error) {
+      console.warn("Error checking hitbox overlaps:", error);
+    }
+  }
+  
   return null;
-}
-
-// Specific interaction handlers
-function showTradingPostOptions(scene) {
-  showDialog(scene, "Trading Post:\nComing Soon!");
-}
-
-function showCraftingWorkshopOptions(scene) {
-  showDialog(scene, "Crafting Workshop:\nComing Soon!");
-}
-
-function showLiquidityPoolOptions(scene) {
-  showDialog(scene, "Liquidity Bank:\nComing Soon!");
-}
-
-function showMerchantQuarterOptions(scene) {
-  showDialog(scene, "Merchant Quarter:\nComing Soon!");
-}
-
-function showRoyalMarketOptions(scene) {
-  showDialog(scene, "Royal Market:\nComing Soon!");
-}
-
-function showTinkerersLabOptions(scene) {
-  showDialog(scene, "Tinkerer's Lab:\nComing Soon!");
 }
 
 // Scavenger Mode Interaction
@@ -393,3 +427,49 @@ function enterCampingMode(scene) {
     });
   }
 }
+
+// Specific village building interactions (implementation of menu functions)
+// These would typically be imported from villageBuildings.js but are included
+// in commented form for reference to ensure the interactionManager file works correctly.
+
+/*
+function showTradingPostOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+
+function showCraftingWorkshopOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+
+function showLiquidityPoolOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+
+function showMerchantQuarterOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+
+function showRoyalMarketOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+
+function showTinkerersLabOptions(scene) {
+  // Implementation from villageBuildings.js
+}
+*/
+
+// For proper module functionality, include these imports and exports
+import { showTradingPostOptions, showCraftingWorkshopOptions, 
+         showLiquidityPoolOptions, showMerchantQuarterOptions,
+         showRoyalMarketOptions, showTinkerersLabOptions } from './villageBuildings.js';
+
+export function setupEscapeKeyForBuildings(scene) {
+          scene.input.keyboard.on('keydown-ESC', () => {
+            if (scene.narrativeScreen >= SCREEN_LIQUIDITY && scene.narrativeScreen <= SCREEN_BATTLE) {
+              hideDialog(scene);
+              hideModalOverlay(scene);
+              clearButtons(scene);
+              scene.narrativeScreen = SCREEN_NONE;
+            }
+          });
+        }

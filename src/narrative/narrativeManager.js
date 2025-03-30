@@ -1,6 +1,8 @@
 // narrativeManager.js
 
 import { showDialog, hideDialog, createScrollableMenu, clearButtons, createButtons, updateHUD } from '../ui/uiManager.js';
+import { applySurvivalTickAndOutcome, checkLevelUp } from '../player/player.js';
+import { createSimpleEffect, addToInventory, getRandomLootForZone, addToLog } from '../inventory/inventorySystem.js';
 
 // Screen states for narrative control
 export const SCREEN_NONE = 0;
@@ -10,6 +12,16 @@ export const SCREEN_CHOICES = 3;
 export const SCREEN_OUTCOME = 4;
 export const SCREEN_ITEM_MENU = 5;
 export const SCREEN_ITEM_PICK = 6;
+
+// Effect colors for visual feedback
+export const EFFECT_COLORS = {
+  LOOT: 0xffd700, // Gold
+  HEALTH: 0x00ff00, // Green
+  DAMAGE: 0xff0000, // Red
+  EXPERIENCE: 0x00ffff, // Cyan
+  HEAL: 0x00dd00, // Light green
+  BUFF: 0xffaa00 // Orange
+};
 
 // Initializes narrative data
 export function initializeNarrative(scene) {
@@ -134,16 +146,81 @@ export async function showOutcome(scene) {
   
   // Apply the outcome with visual effects
   scene.cameras.main.flash(200, 255, 255, 255, true);
-  await applyOutcomeEffects(scene, outcomeText);
   
-  showDialog(scene, `Outcome:\n\n${outcomeText}\n\n(Press SPACE to continue)`);
-  scene.narrativeScreen = SCREEN_OUTCOME;
+  // Process the outcome using the enhanced system
+  await applyOutcome(scene, outcomeText);
 }
 
-// Applies effects based on narrative outcomes (expanded function combining both versions)
-async function applyOutcomeEffects(scene, outcomeText) {
-  // Check for specific scene transitions
+// Enhanced outcome processing system
+export async function applyOutcome(scene, outcomeText) {
+  console.log("Before applying outcome, player stats:", scene.playerStats);
+  
+  // Apply survival effects from the outcome text
+  applySurvivalTickAndOutcome(scene, outcomeText);
+  
+  console.log("After applying outcome, player stats:", scene.playerStats);
+  
+  // Award experience for completing events
+  if (scene.playerStats && scene.currentZone !== "Village") {
+    const baseExp = 5;
+    const expGain = baseExp + Math.floor(Math.random() * 5);
+    scene.playerStats.experience = (scene.playerStats.experience || 0) + expGain;
+    outcomeText += `\n(+${expGain} EXP)`;
+    checkLevelUp(scene);
+  }
+  
+  // Handle loot generation
+  if (outcomeText.includes("(+Loot)")) {
+    const randomItemName = getRandomLootForZone(scene);
+    if (randomItemName) {
+      addToInventory(scene, randomItemName);
+      outcomeText += `\nLoot received: ${randomItemName}`;
+      
+      // Add loot to log
+      addToLog(scene, `Received: ${randomItemName}`);
+      
+      // Visual loot feedback
+      if (scene.player) {
+        createSimpleEffect(scene, scene.player.x, scene.player.y + 10, EFFECT_COLORS.LOOT);
+      }
+    } else {
+      outcomeText += "\nSearched but found nothing of value.";
+      // Also log no loot found
+      addToLog(scene, "Searched but found nothing of value");
+    }
+  }
+  
+  // Update HUD after all changes
+  updateHUD(scene);
+  
+  // Check for zone transition
+  const travelMatch = outcomeText.match(/\(Travel to ([^)]+)\)/i);
+  if (travelMatch) {
+    const zoneName = travelMatch[1].trim();
+    console.log("Travel outcome detected. Zone name extracted:", zoneName);
+    const zone = scene.zoneList.find(z => z.name.toLowerCase() === zoneName.toLowerCase());
+    if (zone) {
+      console.log("Traveling to zone:", zone.name);
+      showDialog(scene, `Traveling to ${zone.name}...\n(Press SPACE to continue)`);
+      await new Promise(resolve => {
+        scene.input.keyboard.once("keydown-SPACE", () => resolve());
+      });
+      scene.time.removeAllEvents();
+      scene.scene.restart({ 
+        zone: zone, 
+        inventory: scene.localInventory, 
+        promptCount: scene.promptCount,
+        playerStats: scene.playerStats 
+      });
+      return;
+    } else {
+      console.warn("No matching zone found for:", zoneName);
+    }
+  }
+  
+  // Check for fishing scene transition
   if (outcomeText.toLowerCase().includes("transition to fishing scene")) {
+    console.log("Transitioning to FishingScene");
     scene.scene.start('FishingScene', {
       inventory: scene.localInventory,
       zone: scene.currentZone,
@@ -152,13 +229,8 @@ async function applyOutcomeEffects(scene, outcomeText) {
     return;
   }
   
-  // Add any other outcome processing here
-  // For future expansion of outcomes and their effects
-  
-  return new Promise(resolve => {
-    // Short delay to simulate processing
-    scene.time.delayedCall(200, resolve);
-  });
+  // Display the final outcome text
+  showDialog(scene, `Outcome:\n\n${outcomeText}\n\n(Press SPACE to continue)`);
 }
 
 // Ends current narrative interaction
@@ -194,25 +266,34 @@ export function handleReturn(scene) {
       const currentOromozi = scene.playerStats.oromozi;
       
       // Check if createInitialStats function exists
-      if (typeof createInitialStats === 'function') {
-        scene.playerStats = createInitialStats(targetZone.name, currentOromozi);
+      let createInitialStats;
+      import('../player/player.js').then(module => {
+        createInitialStats = module.createInitialStats;
         
-        // Preserve level and experience
-        if (scene.playerStats.level) {
-          scene.playerStats.level = scene.playerStats.level;
-          scene.playerStats.experience = scene.playerStats.experience;
+        // Update player stats
+        if (typeof createInitialStats === 'function') {
+          scene.playerStats = createInitialStats(targetZone.name, currentOromozi);
+          
+          // Preserve level and experience
+          if (scene.playerStats.level) {
+            const currentLevel = scene.playerStats.level;
+            const currentExp = scene.playerStats.experience;
+            scene.playerStats.level = currentLevel;
+            scene.playerStats.experience = currentExp;
+          }
+        } else {
+          // Fallback if function doesn't exist
+          console.warn("createInitialStats function not found, preserving existing stats");
+          scene.playerStats.currentZone = targetZone.name;
         }
-      } else {
-        // Fallback if function doesn't exist
-        console.warn("createInitialStats function not found, preserving existing stats");
-        scene.playerStats.zone = targetZone.name;
-      }
-      
-      scene.scene.restart({ 
-        zone: targetZone, 
-        inventory: scene.localInventory, 
-        promptCount: 0,
-        playerStats: scene.playerStats
+        
+        // Restart the scene with new zone
+        scene.scene.restart({ 
+          zone: targetZone, 
+          inventory: scene.localInventory, 
+          promptCount: 0,
+          playerStats: scene.playerStats
+        });
       });
     });
   } else {

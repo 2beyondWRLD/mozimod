@@ -1,5 +1,28 @@
 // utils.js
 
+// Visual effect settings
+export const EFFECT_COLORS = {
+  LOOT: 0xFFD700,      // Gold
+  ATTACK: 0xFF0000,    // Red
+  HEAL: 0x00FF00,      // Green
+  EXPERIENCE: 0x00FFFF, // Cyan
+  DAMAGE: 0xFF6600,    // Orange
+  BUFF: 0xFFAA00,      // Light orange
+  DEBUFF: 0xFF00FF     // Magenta
+};
+
+// Sound effects (placeholders - will need actual sound files)
+export const SOUNDS = {
+  ATTACK: 'attack',
+  LOOT: 'loot_pickup',
+  HURT: 'player_hurt',
+  ITEM_USE: 'item_use',
+  CRATE_BREAK: 'crate_break',
+  MONSTER_HURT: 'monster_hurt',
+  MONSTER_DEATH: 'monster_death',
+  LEVEL_UP: 'level_up'
+};
+
 // Initializes the equipped item data structures
 export function initEquippedData(scene) {
   scene.equippedItems = scene.equippedItems || [];

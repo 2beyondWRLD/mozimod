@@ -28,7 +28,8 @@ export function updateHUD(scene) {
       );
     }
     
-    if (scene.healthBar) {
+    // Update health bar if it exists AND has a clear method
+    if (scene.healthBar && typeof scene.healthBar.clear === 'function') {
       const healthPercent = s.health / 100;
       scene.healthBar.clear();
       scene.healthBar.fillStyle(0x00ff00, 1);

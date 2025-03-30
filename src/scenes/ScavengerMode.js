@@ -7,9 +7,10 @@ import { initializeNarrative, showPrompt, SCREEN_NONE, SCREEN_PROLOGUE, SCREEN_P
 import { createSimpleEffect, createFloatingText } from '../utils/utils.js';
 import { spawnMultipleExclamations, getOverlappingExclamation } from '../interactions/interactionManager.js';
 
-// Define the necessary constants
+// Define necessary constants
 const BG_SCALE = 0.3;
 const PLAYER_SCALE = 2.5;
+const CRATE_SCALE = 1.5; // Proper scale for crates
 
 // Define the SCAVENGER_ZONES constant
 const SCAVENGER_ZONES = [
@@ -56,43 +57,51 @@ export default class ScavengerMode extends Phaser.Scene {
     this.lootCrates = null;
     this.exclamations = null;
     this.playerShadow = null;
-    
+    this.attackHitbox = null; // Attack hitbox object
+
     // Dialog system
     this.dialogBg = null;
     this.dialogText = null;
     this.isDialogOpen = false;
-    
+
     // Input controls
     this.cursors = null;
     this.wasdKeys = null;
     this.actionKeys = null;
-    
+
     // Narrative system
     this.narrativeScreen = SCREEN_NONE;
     this.promptCount = 0;
     this.activePrompt = null;
     this.chosenOptionIndex = -1;
-    
+
     // World settings
     this.currentZone = null;
     this.bgScale = BG_SCALE;
     this.isAttacking = false;
     this.lastDirection = "down";
-    
+
     // Game time tracking
     this.secondsPerDay = 240;
     this.secondsPerHour = this.secondsPerDay / 24;
-    
+
     // Tracking arrays
     this.exclamationSprites = [];
     this.miniMapMonsters = [];
     this.miniMapCrates = [];
     this.logMessages = [];
+
+    // HUD elements
+    this.healthBar = null;
+    this.staminaBar = null;
+    this.hungerBar = null;
+    this.thirstBar = null;
+    this.oromoziText = null;
   }
 
   preload() {
     console.log("ScavengerMode preload started");
-    
+
     // Load assets for all zones
     SCAVENGER_ZONES.forEach(zone => {
       this.load.json(zone.mapKey, `assets/maps/${zone.mapKey}.json`);
@@ -101,70 +110,68 @@ export default class ScavengerMode extends Phaser.Scene {
         this.load.image(zone.foregroundKey, `assets/foregrounds/${zone.foregroundKey}.png`);
       }
     });
-    
+
     // Load player sprite
     this.load.spritesheet("player", "assets/sprites/player.png", { 
       frameWidth: 48, 
       frameHeight: 48 
     });
-    
+
     // Load other required assets
     this.load.image('exclamation', 'assets/sprites/exclamation.png');
     this.load.spritesheet('loot_crate', 'assets/sprites/crate.png', {
       frameWidth: 32,
       frameHeight: 32
     });
-    
-    // Load narrative data
+
+    // Load narrative and loot data
     this.load.json('lootTable', 'data/lootTable.json');
     this.load.json('narrativePrologues', 'data/narrativePrologues.json');
     this.load.json('narrativePrompts', 'data/narrativeprompt.json');
-    
+
     console.log("ScavengerMode preload completed");
   }
 
   create(data) {
     console.log("ScavengerMode create started with data:", data);
-    
+
     // Initialize scene with zone data
     const zoneData = data.zone || SCAVENGER_ZONES[0];
     console.log("Using zone:", zoneData.name);
-    
+
     // Initialize player stats and inventory
     this.playerStats = data.playerStats || createInitialStats(zoneData.name);
     this.localInventory = data.inventory || [{ name: "Bread", quantity: 1 }];
     this.currentZone = zoneData.name;
     this.playerStats.currentZone = this.currentZone;
     this.promptCount = data.promptCount || 0;
-    
+
     // Set up time system
     if (!this.registry.get('gameTime')) {
       this.registry.set('gameTime', 0);
     }
-    
+
     // Create background and set up physics boundaries
     this.background = this.add.image(0, 0, zoneData.backgroundKey)
       .setOrigin(0, 0)
       .setScale(BG_SCALE);
-    
-    // Setup world physics
+
     this.physics.world.setBounds(0, 0, this.background.displayWidth, this.background.displayHeight);
     this.cameras.main.setBounds(0, 0, this.background.displayWidth, this.background.displayHeight);
-    
+
     // Create obstacles group
     this.obstacles = this.physics.add.staticGroup();
-    
+
     // Setup objects and collisions from map
     const mapData = this.cache.json.get(zoneData.mapKey);
     this.setupMapObjects(mapData, zoneData, BG_SCALE);
-    
+
     // Create player and shadow
     this.player = this.physics.add.sprite(zoneData.spawnX * BG_SCALE, zoneData.spawnY * BG_SCALE, "player")
       .setScale(PLAYER_SCALE * 0.4);
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(500);
-    
-    // Add player shadow
+
     this.playerShadow = this.add.ellipse(
       this.player.x,
       this.player.y + 12,
@@ -173,32 +180,45 @@ export default class ScavengerMode extends Phaser.Scene {
       0x000000,
       0.3
     ).setDepth(499);
-    
+
+    // Create attack hitbox (invisible, used for collisions)
+    this.attackHitbox = this.physics.add.sprite(this.player.x, this.player.y, null);
+    this.attackHitbox.setSize(80, 80);
+    this.attackHitbox.setVisible(false);
+    this.attackHitbox.setActive(false);
+
     // Set up player animations
     this.createPlayerAnimations();
-    
-    // Set up camera
+
+    // Set up camera to follow the player
     this.cameras.main.startFollow(this.player);
     this.cameras.main.setZoom(2);
-    
+
     // Create HUD and minimap
     createHUD(this);
+    this.createExtendedHUD();
     const mapX = this.game.config.width - 110;
     const mapY = 10;
     createMiniMap(this, mapX, mapY, 100);
-    
-    // Create loot crates group
-    this.lootCrates = this.physics.add.group();
-    
+
+    // Create loot crates group with proper scale
+    this.lootCrates = this.physics.add.group({
+      defaultKey: 'loot_crate',
+      defaultFrame: 0,
+      createCallback: (crate) => {
+        crate.setScale(CRATE_SCALE);
+      }
+    });
+
     // Create exclamations group
     this.exclamations = this.physics.add.group();
-    
-    // Set up collision between player and obstacles
+
+    // Set up collisions
     this.physics.add.collider(this.player, this.obstacles);
-    
-    // Set up collision between player and loot crates
     this.physics.add.collider(this.player, this.lootCrates);
-    
+    // Use the imported hitCrate function when attack hitbox overlaps a crate
+    this.physics.add.overlap(this.attackHitbox, this.lootCrates, this.onAttackHitCrate, null, this);
+
     // Add log text
     this.logText = this.add.text(
       10, 
@@ -206,22 +226,22 @@ export default class ScavengerMode extends Phaser.Scene {
       "", 
       { font: "14px Arial", fill: "#ffffff", stroke: "#000000", strokeThickness: 2 }
     ).setScrollFactor(0).setDepth(2000);
-    
-    // Create keyboard inputs
+
+    // Set up player inputs
     this.setupInputs();
-    
+
     // Initialize narrative system
     initializeNarrative(this);
-    
-    // Spawn game elements
+
+    // Spawn loot crates and exclamation points after a short delay
     this.time.delayedCall(500, () => {
       spawnMultipleLootCrates(this, 5);
       spawnMultipleExclamations(this, 3);
     });
-    
-    // Show welcome message
+
+    // Show welcome message for Scavenger Mode
     this.showScavengerModeInfo();
-    
+
     console.log("ScavengerMode create completed");
   }
 
@@ -230,23 +250,27 @@ export default class ScavengerMode extends Phaser.Scene {
     let gameTime = this.registry.get("gameTime") || 0;
     gameTime += delta;
     this.registry.set("gameTime", gameTime);
-    
-    // Only process movement when no dialog is active
+
+    // Process player movement only if no dialog or narrative prompt is active
     if (this.narrativeScreen === SCREEN_NONE && !this.isDialogOpen) {
       this.handlePlayerMovement();
     }
-    
+
     // Update player shadow position
     if (this.playerShadow) {
       this.playerShadow.setPosition(this.player.x, this.player.y + 12);
     }
-    
-    // Update minimap
+
+    // Update attack hitbox position based on the player's last direction
+    if (this.attackHitbox) {
+      this.updateAttackHitboxPosition();
+    }
+
+    // Update minimap and HUD
     updateMiniMap(this, this.game.config.width - 110, 10, 100);
-    
-    // Update HUD
     updateHUD(this);
-    
+    this.updateExtendedHUD();
+
     // Handle exclamation interaction
     const exclamation = getOverlappingExclamation(this);
     if (exclamation && Phaser.Input.Keyboard.JustDown(this.actionKeys.e)) {
@@ -254,10 +278,10 @@ export default class ScavengerMode extends Phaser.Scene {
       exclamation.destroy();
       showPrompt(this);
     }
-    
-    // Auto progress narrative
-    if (this.narrativeScreen === SCREEN_PROLOGUE && 
-        this.input.keyboard.checkDown(this.input.keyboard.addKey('SPACE'), 500)) {
+
+    // Auto-progress narrative on SPACE when in prologue
+    if (this.narrativeScreen === SCREEN_PROLOGUE &&
+        Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey('SPACE'))) {
       this.narrativeScreen = SCREEN_NONE;
       hideDialog(this);
     }
@@ -265,15 +289,13 @@ export default class ScavengerMode extends Phaser.Scene {
 
   setupMapObjects(mapData, zoneData, bgScale) {
     if (!mapData || !mapData.layers) return;
-    
+
     mapData.layers.forEach(layer => {
       // Process collision objects
       if (layer.type === "objectgroup" && layer.name === "Object Layer 1") {
         const offsetX = layer.offsetx || 0;
         const offsetY = layer.offsety || 0;
-        
         layer.objects.forEach(obj => {
-          // Create collision rectangles
           const rect = this.add.rectangle(
             (obj.x + offsetX) * bgScale + 5,
             (obj.y + offsetY) * bgScale + 5,
@@ -286,11 +308,11 @@ export default class ScavengerMode extends Phaser.Scene {
           this.physics.add.existing(rect, true);
           this.obstacles.add(rect);
         });
-      } 
-      // Process foreground layers if defined
+      }
+      // Process foreground image layer if defined
       else if (
         layer.type === "imagelayer" &&
-        zoneData.foregroundKey && 
+        zoneData.foregroundKey &&
         layer.name.toLowerCase() === zoneData.foregroundKey.toLowerCase()
       ) {
         const offX = layer.x || 0;
@@ -302,12 +324,159 @@ export default class ScavengerMode extends Phaser.Scene {
       }
     });
   }
-  
+
+  // Create custom extended HUD to display multiple player stats
+  createExtendedHUD() {
+    const padding = 10;
+    const barWidth = 150;
+    const barHeight = 10;
+
+    // HUD background
+    const hudBg = this.add.rectangle(
+      padding,
+      padding,
+      barWidth + padding * 2,
+      120,
+      0x000000,
+      0.5
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1000);
+
+    // Health bar
+    this.add.rectangle(
+      padding * 2,
+      padding * 2,
+      barWidth,
+      barHeight,
+      0x444444,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1001);
+    this.healthBar = this.add.rectangle(
+      padding * 2,
+      padding * 2,
+      barWidth,
+      barHeight,
+      0xff0000,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1002);
+    this.add.text(
+      padding * 2,
+      padding * 2 - 15,
+      "Health",
+      { font: "12px Arial", fill: "#ffffff" }
+    ).setScrollFactor(0).setDepth(1002);
+
+    // Stamina bar
+    this.add.rectangle(
+      padding * 2,
+      padding * 3 + barHeight,
+      barWidth,
+      barHeight,
+      0x444444,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1001);
+    this.staminaBar = this.add.rectangle(
+      padding * 2,
+      padding * 3 + barHeight,
+      barWidth,
+      barHeight,
+      0x00ff00,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1002);
+    this.add.text(
+      padding * 2,
+      padding * 3 + barHeight - 15,
+      "Stamina",
+      { font: "12px Arial", fill: "#ffffff" }
+    ).setScrollFactor(0).setDepth(1002);
+
+    // Hunger bar
+    this.add.rectangle(
+      padding * 2,
+      padding * 4 + barHeight * 2,
+      barWidth,
+      barHeight,
+      0x444444,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1001);
+    this.hungerBar = this.add.rectangle(
+      padding * 2,
+      padding * 4 + barHeight * 2,
+      barWidth,
+      barHeight,
+      0xffa500,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1002);
+    this.add.text(
+      padding * 2,
+      padding * 4 + barHeight * 2 - 15,
+      "Hunger",
+      { font: "12px Arial", fill: "#ffffff" }
+    ).setScrollFactor(0).setDepth(1002);
+
+    // Thirst bar
+    this.add.rectangle(
+      padding * 2,
+      padding * 5 + barHeight * 3,
+      barWidth,
+      barHeight,
+      0x444444,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1001);
+    this.thirstBar = this.add.rectangle(
+      padding * 2,
+      padding * 5 + barHeight * 3,
+      barWidth,
+      barHeight,
+      0x0000ff,
+      1
+    ).setOrigin(0, 0).setScrollFactor(0).setDepth(1002);
+    this.add.text(
+      padding * 2,
+      padding * 5 + barHeight * 3 - 15,
+      "Thirst",
+      { font: "12px Arial", fill: "#ffffff" }
+    ).setScrollFactor(0).setDepth(1002);
+
+    // OROMOZI balance
+    this.oromoziText = this.add.text(
+      padding * 2,
+      padding * 6 + barHeight * 4,
+      "OROMOZI: 0",
+      { font: "14px Arial", fill: "#ffff00", stroke: "#000000", strokeThickness: 2 }
+    ).setScrollFactor(0).setDepth(1002);
+  }
+
+  // Update extended HUD based on current player stats
+  updateExtendedHUD() {
+    if (!this.playerStats) return;
+    const barWidth = 150;
+
+    if (this.healthBar) {
+      const healthPercent = this.playerStats.health / (this.playerStats.maxHealth || 100);
+      this.healthBar.width = barWidth * healthPercent;
+    }
+    if (this.staminaBar) {
+      const staminaPercent = this.playerStats.stamina / (this.playerStats.maxStamina || 100);
+      this.staminaBar.width = barWidth * staminaPercent;
+    }
+    if (this.hungerBar) {
+      const hungerPercent = this.playerStats.hunger / 100;
+      this.hungerBar.width = barWidth * hungerPercent;
+    }
+    if (this.thirstBar) {
+      const thirstPercent = this.playerStats.thirst / 100;
+      this.thirstBar.width = barWidth * thirstPercent;
+    }
+    if (this.oromoziText) {
+      this.oromoziText.setText(`OROMOZI: ${this.playerStats.oromozi || 0}`);
+    }
+  }
+
   // Set up player input handling
   setupInputs() {
     // Arrow keys
     this.cursors = this.input.keyboard.createCursorKeys();
-    
+
     // WASD keys
     this.wasdKeys = this.input.keyboard.addKeys({
       up: 'W',
@@ -315,16 +484,16 @@ export default class ScavengerMode extends Phaser.Scene {
       left: 'A',
       right: 'D'
     });
-    
+
     // Action keys
     this.actionKeys = this.input.keyboard.addKeys({
-      z: "Z", 
+      z: "Z",
       space: "SPACE",
       escape: "ESC",
       e: "E"
     });
-    
-    // Attack key (Space)
+
+    // Attack key (SPACE)
     this.input.keyboard.on('keydown-SPACE', () => {
       if (this.narrativeScreen === SCREEN_NONE && !this.isDialogOpen) {
         this.handlePlayerAttack();
@@ -332,15 +501,15 @@ export default class ScavengerMode extends Phaser.Scene {
         this.handleDialogConfirm();
       }
     });
-    
-    // Zone change key
+
+    // Zone change key (Z)
     this.actionKeys.z.on('down', () => {
       if (this.narrativeScreen === SCREEN_NONE && !this.isDialogOpen) {
         this.handleZoneChange();
       }
     });
-    
-    // Menu/exit key
+
+    // Menu/exit key (ESC)
     this.actionKeys.escape.on('down', () => {
       if (this.isDialogOpen) {
         hideDialog(this);
@@ -353,44 +522,44 @@ export default class ScavengerMode extends Phaser.Scene {
       }
     });
   }
-  
-  // Handle player movement based on inputs
+
+  // Handle player movement based on input
   handlePlayerMovement() {
     const speed = 100;
     this.player.setVelocity(0);
-    
+
     // Left movement
     if (this.cursors.left.isDown || this.wasdKeys.left.isDown) {
       this.player.setVelocityX(-speed);
       this.player.anims.play('walk-left', true);
       this.lastDirection = "left";
-    } 
+    }
     // Right movement
     else if (this.cursors.right.isDown || this.wasdKeys.right.isDown) {
       this.player.setVelocityX(speed);
       this.player.anims.play('walk-right', true);
       this.lastDirection = "right";
     }
-    
+
     // Up movement
     if (this.cursors.up.isDown || this.wasdKeys.up.isDown) {
       this.player.setVelocityY(-speed);
-      if (!this.cursors.left.isDown && !this.cursors.right.isDown && 
-          !this.wasdKeys.left.isDown && !this.wasdKeys.right.isDown) {
+      if (!(this.cursors.left.isDown || this.cursors.right.isDown ||
+            this.wasdKeys.left.isDown || this.wasdKeys.right.isDown)) {
         this.player.anims.play('walk-up', true);
         this.lastDirection = "up";
       }
-    } 
+    }
     // Down movement
     else if (this.cursors.down.isDown || this.wasdKeys.down.isDown) {
       this.player.setVelocityY(speed);
-      if (!this.cursors.left.isDown && !this.cursors.right.isDown &&
-          !this.wasdKeys.left.isDown && !this.wasdKeys.right.isDown) {
+      if (!(this.cursors.left.isDown || this.cursors.right.isDown ||
+            this.wasdKeys.left.isDown || this.wasdKeys.right.isDown)) {
         this.player.anims.play('walk-down', true);
         this.lastDirection = "down";
       }
     }
-    
+
     // Idle animations
     if (this.player.body.velocity.x === 0 && this.player.body.velocity.y === 0) {
       if (this.lastDirection === "down") {
@@ -404,81 +573,48 @@ export default class ScavengerMode extends Phaser.Scene {
       }
     }
   }
-  
+
+  // Update attack hitbox position based on player direction
+  updateAttackHitboxPosition() {
+    if (this.lastDirection === "up") {
+      this.attackHitbox.setPosition(this.player.x, this.player.y - 30);
+    } else if (this.lastDirection === "down") {
+      this.attackHitbox.setPosition(this.player.x, this.player.y + 30);
+    } else if (this.lastDirection === "left") {
+      this.attackHitbox.setPosition(this.player.x - 30, this.player.y);
+    } else if (this.lastDirection === "right") {
+      this.attackHitbox.setPosition(this.player.x + 30, this.player.y);
+    }
+  }
+
   // Handle player attack input
   handlePlayerAttack() {
     if (this.isAttacking) return;
-    
+
     this.isAttacking = true;
     this.player.setVelocity(0);
     this.player.anims.play(`attack-${this.lastDirection}`, true);
-    
-    // Camera shake effect for attack
+
+    // Activate attack hitbox and provide camera shake effect
+    this.attackHitbox.setActive(true);
     this.cameras.main.shake(50, 0.005);
-    
-    // Attack sound effect
-    // this.sound.play('attack_sound', { volume: 0.5 });
-    
-    // Check for crate hits
-    if (this.lootCrates) {
-      const crates = this.lootCrates.getChildren();
-      const attackRange = 60;
-      
-      for (let crate of crates) {
-        const distance = Phaser.Math.Distance.Between(
-          this.player.x, this.player.y, crate.x, crate.y
-        );
-        
-        if (distance < attackRange) {
-          console.log("Player attacked crate");
-          this.hitCrate(crate);
-          break;
-        }
-      }
-    }
-    
+
     // Reset attack state after animation completes
     this.player.once('animationcomplete', () => {
       this.isAttacking = false;
+      this.attackHitbox.setActive(false);
     });
   }
-  
-  // Handle crate hit logic
-  hitCrate(crate) {
-    if (crate.getData('breaking')) return;
 
-    let health = crate.getData('health') || 3;
-    health -= 1;
-    crate.setData('health', health);
-
-    // Visual feedback
-    crate.setTint(0xff9900);
-    this.time.delayedCall(100, () => crate.clearTint());
-    this.cameras.main.shake(50, 0.003);
-
-    if (health <= 0) {
-      crate.setData('breaking', true);
-      const loot = getRandomLootForZone(this);
-
-      if (loot) {
-        addToInventory(this, loot);
-        this.addToLog(`Found: ${loot}`);
-        createSimpleEffect(this, crate.x, crate.y, 0xFFD700);
-      } else {
-        this.addToLog("No loot found");
-      }
-
-      // Destroy the crate with particle effect
-      createSimpleEffect(this, crate.x, crate.y, 0xA52A2A);
-      crate.destroy();
-    } else {
-      console.log(`Crate hit, health remaining: ${health}`);
-    }
+  // Handle overlap between attack hitbox and loot crates
+  onAttackHitCrate(hitbox, crate) {
+    if (!this.isAttacking || !hitbox.active) return;
+    // Use the modular hitCrate function from inventorySystem
+    hitCrate(this, crate);
   }
-  
+
   // Create player animation definitions
   createPlayerAnimations() {
-    // Only create if animations don't exist yet
     if (!this.anims.exists('walk-down')) {
       // Walking animations
       this.anims.create({
@@ -487,28 +623,25 @@ export default class ScavengerMode extends Phaser.Scene {
         frameRate: 10,
         repeat: -1
       });
-    
       this.anims.create({
         key: "walk-right",
         frames: this.anims.generateFrameNumbers("player", { start: 6, end: 11 }),
         frameRate: 10,
         repeat: -1
       });
-    
       this.anims.create({
         key: "walk-up",
         frames: this.anims.generateFrameNumbers("player", { start: 30, end: 35 }),
         frameRate: 10,
         repeat: -1
       });
-    
       this.anims.create({
         key: "walk-left",
         frames: this.anims.generateFrameNumbers("player", { start: 24, end: 29 }),
         frameRate: 10,
         repeat: -1
       });
-    
+
       // Idle animations
       this.anims.create({
         key: "idle-down",
@@ -516,26 +649,23 @@ export default class ScavengerMode extends Phaser.Scene {
         frameRate: 10,
         repeat: -1
       });
-    
       this.anims.create({
         key: "idle-up",
         frames: this.anims.generateFrameNumbers("player", { start: 12, end: 17 }),
         frameRate: 10,
         repeat: -1
       });
-    
       this.anims.create({
         key: "idle-left",
         frames: [{ key: "player", frame: 24 }],
         frameRate: 10
       });
-    
       this.anims.create({
         key: "idle-right",
         frames: [{ key: "player", frame: 6 }],
         frameRate: 10
       });
-    
+
       // Attack animations
       this.anims.create({
         key: "attack-down",
@@ -543,28 +673,25 @@ export default class ScavengerMode extends Phaser.Scene {
         frameRate: 15,
         repeat: 0
       });
-    
       this.anims.create({
         key: "attack-right",
         frames: this.anims.generateFrameNumbers("player", { start: 42, end: 45 }),
         frameRate: 15,
         repeat: 0
       });
-    
       this.anims.create({
         key: "attack-up",
         frames: this.anims.generateFrameNumbers("player", { start: 48, end: 51 }),
         frameRate: 15,
         repeat: 0
       });
-    
       this.anims.create({
         key: "attack-left",
         frames: this.anims.generateFrameNumbers("player", { start: 54, end: 57 }),
         frameRate: 15,
         repeat: 0
       });
-      
+
       // Crate breaking animation
       this.anims.create({
         key: "crate_break",
@@ -574,17 +701,16 @@ export default class ScavengerMode extends Phaser.Scene {
       });
     }
   }
-  
-  // Handle zone change
+
+  // Handle zone change when pressing the Z key
   handleZoneChange() {
     console.log("Changing zones with Z key");
     const currentZoneIndex = SCAVENGER_ZONES.findIndex(z => z.name === this.currentZone);
     const newZoneIndex = (currentZoneIndex + 1) % SCAVENGER_ZONES.length;
-    this.currentZone = SCAVENGER_ZONES[newZoneIndex].name;
-    this.playerStats.currentZone = this.currentZone;
-    
+    // Update the player's current zone in stats before transitioning
+    this.playerStats.currentZone = SCAVENGER_ZONES[newZoneIndex].name;
     console.log(`Transitioning to ${SCAVENGER_ZONES[newZoneIndex].name}`);
-    
+
     this.cameras.main.fade(500, 0, 0, 0);
     this.time.delayedCall(500, () => {
       this.scene.restart({
@@ -595,20 +721,18 @@ export default class ScavengerMode extends Phaser.Scene {
       });
     });
   }
-  
-  // Show dialog to return to village
+
+  // Show dialog asking to return to the Village
   showReturnToVillageDialog() {
     this.isDialogOpen = true;
     showDialog(this, "Return to Village?\n(Press SPACE to confirm, ESC to cancel)");
   }
-  
-  // Handle dialog confirmation
+
+  // Handle dialog confirmation (return to Village)
   handleDialogConfirm() {
     if (this.isDialogOpen) {
       hideDialog(this);
       this.isDialogOpen = false;
-      
-      // Return to village
       console.log("Returning to Village");
       this.cameras.main.fade(500, 0, 0, 0);
       this.time.delayedCall(500, () => {
@@ -625,22 +749,23 @@ export default class ScavengerMode extends Phaser.Scene {
       });
     }
   }
-  
-  // Show welcome info for Scavenger Mode
+
+  // Display the initial welcome info for Scavenger Mode
   showScavengerModeInfo() {
     this.isDialogOpen = true;
-    showDialog(this, "Scavenger Mode\n\nControls:\nWASD/Arrows: Move\nSPACE: Attack\nE: Interact\nZ: Change Zone\nESC: Menu/Exit\n\nPress ESC to begin");
+    showDialog(
+      this,
+      "Scavenger Mode\n\nControls:\nWASD/Arrows: Move\nSPACE: Attack\nE: Interact\nZ: Change Zone\nESC: Menu/Exit\n\nPress ESC to begin"
+    );
   }
-  
-  // Add message to log
+
+  // Add a message to the in-game log (up to 5 messages)
   addToLog(message) {
     if (!this.logMessages) this.logMessages = [];
-    
     this.logMessages.push(message);
     if (this.logMessages.length > 5) {
       this.logMessages.shift();
     }
-    
     if (this.logText) {
       this.logText.setText(this.logMessages.join('\n'));
       this.logText.setTint(0xffff00);

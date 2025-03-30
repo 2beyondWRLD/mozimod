@@ -8,7 +8,7 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
   
     // Improved collision box for player (smaller than sprite for better movement)
     scene.player.body.setSize(16, 16);
-    scene.player.body.setOffset(16, 20);
+    scene.player.body.setOffset(16, 16);
   
     createPlayerAnimations(scene);
     scene.player.anims.play("idle-down", true);
@@ -423,4 +423,198 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
         }
       });
     });
+  }
+  
+  // SURVIVAL SYSTEM INTEGRATION
+  
+  // Helper function to create floating text - imported from module to avoid circular dependencies
+  function createFloatingText(scene, x, y, text, color) {
+    import('../inventory/inventorySystem.js').then(module => {
+      if (module.createFloatingText) {
+        module.createFloatingText(scene, x, y, text, color);
+      }
+    });
+  }
+  
+  // Check for level up based on experience
+  export function checkLevelUp(scene) {
+    if (!scene.playerStats) return;
+    
+    const currentLevel = scene.playerStats.level || 1;
+    const currentExp = scene.playerStats.experience || 0;
+    
+    // Experience required for next level (increases with each level)
+    const nextLevelExp = currentLevel * 100;
+    
+    if (currentExp >= nextLevelExp) {
+      // Level up!
+      scene.playerStats.level = currentLevel + 1;
+      scene.playerStats.experience = currentExp - nextLevelExp;
+      
+      // Health and stats bonus for leveling up
+      scene.playerStats.health = 100; // Full heal on level up
+      
+      // Visual and audio feedback
+      if (scene.player) {
+        // Level up effect
+        scene.cameras.main.flash(500, 255, 255, 0);
+        createFloatingText(scene, scene.player.x, scene.player.y - 30, "LEVEL UP!", 0xffff00);
+        
+        // Create a larger level up indicator in the center of the screen
+        const levelText = scene.add.text(
+          scene.cameras.main.centerX, 
+          scene.cameras.main.centerY,
+          `LEVEL UP!\nYou are now level ${scene.playerStats.level}`,
+          { 
+            fontFamily: 'Arial',
+            fontSize: '32px',
+            color: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 6,
+            align: 'center'
+          }
+        ).setOrigin(0.5).setDepth(5000).setScrollFactor(0);
+        
+        // Animation for the level up text
+        scene.tweens.add({
+          targets: levelText,
+          scale: 1.2,
+          duration: 500,
+          yoyo: true,
+          repeat: 1,
+          onComplete: () => {
+            scene.tweens.add({
+              targets: levelText,
+              alpha: 0,
+              y: scene.cameras.main.centerY - 100,
+              duration: 500,
+              onComplete: () => levelText.destroy()
+            });
+          }
+        });
+      }
+      
+      // Check if there's another level up pending
+      checkLevelUp(scene);
+    }
+  }
+  
+  // Apply survival tick and narrative outcome effects
+  export function applySurvivalTickAndOutcome(scene, outcomeText) {
+    if (!scene.playerStats) scene.playerStats = createInitialStats(scene.currentZone);
+    
+    console.log("Applying outcome:", outcomeText);
+    
+    // Parse and apply the outcome effects from the narrative prompt
+    let statChanges = [];
+    
+    // Flexible regex to catch all stat formats
+    const statChangeRegex = /\(\s*([-+]\d+)\s*(\w+)\s*\)(?:\s*\[type=(\w+)\])?/g;
+    let match;
+    
+    // Collect all stat changes first
+    while ((match = statChangeRegex.exec(outcomeText)) !== null) {
+      console.log("Matched stat change:", match);
+      const value = parseInt(match[1]);
+      const stat = match[2].toLowerCase();
+      const type = match[3] ? match[3].toLowerCase() : null;
+      
+      statChanges.push({ value, stat, type });
+    }
+    
+    // Now apply all stat changes
+    for (const change of statChanges) {
+      const { value, stat, type } = change;
+      
+      if (stat === 'health') {
+        if (type && value < 0) {
+          // Negative health with damage type (e.g., predator, fall)
+          let dmgVal = -value; // damage is positive
+          const rVal = scene.equippedResist[type] || 0;
+          const damageReduction = Math.min(rVal, dmgVal * 0.7); // Cap damage reduction at 70%
+          dmgVal = Math.max(dmgVal - damageReduction, 0);
+          
+          // Show damage reduction feedback if significant
+          if (damageReduction > 0 && scene.player) {
+            createFloatingText(scene, scene.player.x, scene.player.y - 30, `Resisted ${damageReduction.toFixed(1)}`, 0xffdd00);
+          }
+          
+          scene.playerStats.health = Math.max(scene.playerStats.health - dmgVal, 0);
+          
+          // Damage feedback
+          if (scene.player && dmgVal > 0) {
+            scene.player.setTint(0xff0000);
+            scene.time.delayedCall(200, () => scene.player.clearTint());
+            scene.cameras.main.shake(100, 0.005 * dmgVal);
+            createFloatingText(scene, scene.player.x, scene.player.y - 10, `-${dmgVal}`, 0xff0000);
+          }
+        } else {
+          // Regular health change
+          scene.playerStats.health = Math.max(scene.playerStats.health + value, 0);
+          if (value > 0) {
+            scene.playerStats.health = Math.min(scene.playerStats.health, 100);
+            if (scene.player) {
+              createFloatingText(scene, scene.player.x, scene.player.y - 20, `+${value} health`, 0x00ff00);
+            }
+          }
+        }
+      } else if (['stamina', 'thirst', 'hunger'].includes(stat)) {
+        // Adjust stat
+        const oldValue = scene.playerStats[stat];
+        scene.playerStats[stat] = Math.max(scene.playerStats[stat] + value, 0);
+        scene.playerStats[stat] = Math.min(scene.playerStats[stat], 100);
+        
+        // Visual feedback for significant changes
+        if (value != 0 && scene.player) {
+          const color = value > 0 ? 0x00ff00 : 0xff6600;
+          const sign = value > 0 ? '+' : '';
+          createFloatingText(scene, scene.player.x, scene.player.y - 15, `${sign}${value} ${stat}`, color);
+        }
+      } else if (stat === 'experience' || stat === 'exp') {
+        // Add experience and level up system
+        if (value > 0 && scene.playerStats) {
+          scene.playerStats.experience = (scene.playerStats.experience || 0) + value;
+          if (scene.player) {
+            createFloatingText(scene, scene.player.x, scene.player.y - 25, `+${value} EXP`, 0x00ffff);
+          }
+          
+          // Check for level up
+          checkLevelUp(scene);
+        }
+      }
+    }
+    
+    // Apply survival ticks (after narrative outcome effects)
+    if (scene.currentZone !== "Village") {
+      scene.playerStats.thirst = Math.max(scene.playerStats.thirst - 5, 0);
+      scene.playerStats.hunger = Math.max(scene.playerStats.hunger - 5, 0);
+      scene.playerStats.stamina = Math.max(scene.playerStats.stamina - 5, 0);
+    }
+  
+    // Apply penalties for critically low survival stats
+    if (scene.currentZone !== "Village") {
+      const { stamina, thirst, hunger, health } = scene.playerStats;
+      let healthReduction = 0;
+      
+      // Survival mechanics - health penalties for very low stats
+      if (stamina <= 10 || thirst <= 10 || hunger <= 10) {
+        healthReduction = 8;
+      } else if (stamina <= 25 || thirst <= 25 || hunger <= 25) {
+        healthReduction = 3;
+      }
+      
+      if (healthReduction > 0) {
+        scene.playerStats.health = Math.max(health - healthReduction, 0);
+        console.log(`Health reduced by ${healthReduction} due to low stats in Scavenger Mode`);
+        
+        if (scene.player) {
+          createFloatingText(scene, scene.player.x, scene.player.y, `${healthReduction} damage due to survival`, 0xff6600);
+        }
+      }
+    }
+    
+    // Check for player death after all effects
+    if (scene.playerStats.health <= 0) {
+      handlePlayerDeath(scene);
+    }
   }
