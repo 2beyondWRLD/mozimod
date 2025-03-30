@@ -1,5 +1,3 @@
-// This is your original player.js with ONLY the missing export added and nothing else changed
-
 // player.js
 
 // Initializes player sprite, physics, and camera behavior
@@ -11,9 +9,6 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
     // Improved collision box for player (smaller than sprite for better movement)
     scene.player.body.setSize(16, 16);
     scene.player.body.setOffset(16, 16);
-  
-    createPlayerAnimations(scene);
-    scene.player.anims.play("idle-down", true);
   
     scene.cameras.main.startFollow(scene.player);
     scene.cameras.main.setZoom(2);
@@ -28,12 +23,20 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       0.3
     ).setDepth(1999);
     
-    // Initialize attack logic
+    // Create animations BEFORE setting up attack logic
+    createPlayerAnimations(scene);
+    
+    // Initial animation
+    scene.player.anims.play("idle-down", true);
+    
+    // Initialize player state and attack logic
     setupPlayerAttacks(scene);
 }
 
 // Creates all player animations with correct frame references
 export function createPlayerAnimations(scene) {
+    console.log("Creating player animations");
+    
     // Walking animations
     scene.anims.create({
       key: "walk-down",
@@ -88,42 +91,41 @@ export function createPlayerAnimations(scene) {
       frames: [{ key: "player", frame: 6 }],
       frameRate: 10
     });
-  
-    // Attack animations - Using the correct sprite sheet rows and columns
-    // Row 6 (down), Row 7 (right), Row 8 (up), Row 9 (left)
-    // Columns 1-4 for each attack animation
     
-    // Attack down (Row 6, Columns 1-4)
+    // ATTACK ANIMATIONS - These are the critical ones!
+    // Attack down (Row 7, frames 0-3 which are frames 36-39 in the sprite sheet)
     scene.anims.create({
       key: "attack-down",
-      frames: scene.anims.generateFrameNumbers("player", { frames: [36, 37, 38, 39] }), // Row 6, Col 1-4
+      frames: scene.anims.generateFrameNumbers("player", { frames: [36, 37, 38, 39] }),
       frameRate: 15,
       repeat: 0
     });
   
-    // Attack right (Row 7, Columns 1-4)
+    // Attack right (Row 8, frames 0-3 which are frames 42-45 in the sprite sheet)
     scene.anims.create({
       key: "attack-right",
-      frames: scene.anims.generateFrameNumbers("player", { frames: [42, 43, 44, 45] }), // Row 7, Col 1-4
+      frames: scene.anims.generateFrameNumbers("player", { frames: [42, 43, 44, 45] }),
       frameRate: 15,
       repeat: 0
     });
   
-    // Attack up (Row 8, Columns 1-4)
+    // Attack up (Row 9, frames 0-3 which are frames 48-51 in the sprite sheet)
     scene.anims.create({
       key: "attack-up",
-      frames: scene.anims.generateFrameNumbers("player", { frames: [48, 49, 50, 51] }), // Row 8, Col 1-4
+      frames: scene.anims.generateFrameNumbers("player", { frames: [48, 49, 50, 51] }),
       frameRate: 15,
       repeat: 0
     });
   
-    // Attack left (Row 9, Columns 1-4)
+    // Attack left (Row 10, frames 0-3 which are frames 54-57 in the sprite sheet)
     scene.anims.create({
       key: "attack-left",
-      frames: scene.anims.generateFrameNumbers("player", { frames: [54, 55, 56, 57] }), // Row 9, Col 1-4
+      frames: scene.anims.generateFrameNumbers("player", { frames: [54, 55, 56, 57] }),
       frameRate: 15,
       repeat: 0
     });
+
+    console.log("All player animations created");
 }
   
 // Sets up player attack listeners and logic
@@ -131,22 +133,25 @@ export function setupPlayerAttacks(scene) {
     scene.isAttacking = false;
     scene.lastDirection = "down";
   
-    // Important: Make sure animation complete event is properly handled
+    // THIS IS THE KEY EVENT HANDLER FOR ATTACK ANIMATIONS
     scene.player.on('animationcomplete', function(anim) {
       console.log("Animation complete:", anim.key);
+      
+      // Only reset state when an attack animation completes
       if (anim.key.startsWith('attack-')) {
         console.log("Attack animation completed");
         scene.isAttacking = false;
         
         // Return to idle animation based on direction
-        scene.player.anims.play(`idle-${scene.lastDirection}`, true);
+        const idleAnim = `idle-${scene.lastDirection}`;
+        console.log("Returning to idle animation:", idleAnim);
+        scene.player.anims.play(idleAnim, true);
       }
     });
     
     scene.applyAttackDamage = () => {
-      const attackRange = 120; // Range for attack detection
+      const attackRange = 120;
       let monstersInRange = [];
-      console.log("Player at:", scene.player.x, scene.player.y, "Direction:", scene.lastDirection);
       
       // Create attack effect based on direction
       let effectX = scene.player.x;
@@ -196,8 +201,6 @@ export function setupPlayerAttacks(scene) {
           });
         }
         
-        console.log("Monsters in range:", monstersInRange.length);
-        
         // Calculate attack power and apply damage
         const baseAttack = 10 + ((scene.playerStats?.level || 1) - 1) * 2;
         const randomFactor = Phaser.Math.Between(-2, 3);
@@ -214,24 +217,27 @@ export function setupPlayerAttacks(scene) {
   
 // Handle player attack when space bar is pressed
 export function handlePlayerAttack(scene) {
-    if (!scene.player || scene.isAttacking) return;
+    // Exit immediately if already attacking or no player exists
+    if (!scene.player || scene.isAttacking) {
+      return;
+    }
     
-    console.log("Player attacking in direction:", scene.lastDirection);
+    // Set attacking state flag
     scene.isAttacking = true;
+    
+    // Stop movement
     scene.player.setVelocity(0);
     
-    // Add a camera shake for feedback
+    // Add feedback
     scene.cameras.main.shake(50, 0.005);
     
-    // Important: Always play the correct attack animation
-    let animKey = `attack-${scene.lastDirection}`;
+    // THIS IS THE CRITICAL LINE FOR ATTACK ANIMATION
+    const animKey = `attack-${scene.lastDirection}`;
     scene.player.anims.play(animKey, true);
     console.log("Playing attack animation:", animKey);
     
     // Apply attack damage
-    if (typeof scene.applyAttackDamage === 'function') {
-      scene.applyAttackDamage();
-    }
+    scene.applyAttackDamage();
     
     // Check for crate interactions
     if (scene.lootCrates) {
@@ -244,7 +250,6 @@ export function handlePlayerAttack(scene) {
         );
         
         if (distance < attackRange) {
-          console.log("Player in range of crate, hitting...");
           if (scene.hitCrate) {
             scene.hitCrate(crate);
           } else if (typeof window.hitCrate === 'function') {
@@ -459,7 +464,7 @@ export function handlePlayerDeath(scene) {
     });
 }
 
-// Check for level up based on experience - THIS IS THE ONLY THING ADDED
+// Check for level up based on experience
 export function checkLevelUp(scene) {
     if (!scene.playerStats) return;
     
