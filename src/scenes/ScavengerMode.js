@@ -1,16 +1,15 @@
 // Import all necessary systems and utilities
 import { createInitialStats } from '../player/player.js';
 import { showDialog, hideDialog, updateHUD, createHUD } from '../ui/uiManager.js';
-import { spawnMultipleLootCrates, hitCrate, getRandomLootForZone, addToInventory } from '../inventory/inventorySystem.js';
+import { spawnMultipleLootCrates, hitCrate, getRandomLootForZone, addToInventory, createSimpleEffect, createFloatingText } from '../inventory/inventorySystem.js';
 import { createMiniMap, updateMiniMap } from '../navigation/navigationSystem.js';
 import { initializeNarrative, showPrompt, SCREEN_NONE, SCREEN_PROLOGUE, SCREEN_PROMPT } from '../narrative/narrativeManager.js';
-import { createSimpleEffect, createFloatingText } from '../utils/utils.js';
 import { spawnMultipleExclamations, getOverlappingExclamation } from '../interactions/interactionManager.js';
 
 // Define necessary constants
 const BG_SCALE = 0.3;
 const PLAYER_SCALE = 2.5;
-const CRATE_SCALE = 1.5; // Proper scale for crates
+const CRATE_SCALE = 1.0; // FIXED: Changed from 1.5 to 1.0 to match inventorySystem.js
 
 // Define the SCAVENGER_ZONES constant
 const SCAVENGER_ZONES = [
@@ -119,9 +118,11 @@ export default class ScavengerMode extends Phaser.Scene {
 
     // Load other required assets
     this.load.image('exclamation', 'assets/sprites/exclamation.png');
+    
+    // FIXED: Corrected frame dimensions from 32x32 to 64x64
     this.load.spritesheet('loot_crate', 'assets/sprites/crate.png', {
-      frameWidth: 32,
-      frameHeight: 32
+      frameWidth: 64,
+      frameHeight: 64
     });
 
     // Load narrative and loot data
@@ -171,6 +172,10 @@ export default class ScavengerMode extends Phaser.Scene {
       .setScale(PLAYER_SCALE * 0.4);
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(500);
+    
+    // FIXED: Correct player body size and offset
+    this.player.body.setSize(16, 16);
+    this.player.body.setOffset(16, 20);  // Changed Y offset from 16 to 20
 
     this.playerShadow = this.add.ellipse(
       this.player.x,
@@ -181,9 +186,8 @@ export default class ScavengerMode extends Phaser.Scene {
       0.3
     ).setDepth(499);
 
-    // Create attack hitbox (invisible, used for collisions)
     this.attackHitbox = this.physics.add.sprite(this.player.x, this.player.y, null);
-    this.attackHitbox.setSize(80, 80);
+    this.attackHitbox.setSize(60, 60); // Smaller size for more precise hits
     this.attackHitbox.setVisible(false);
     this.attackHitbox.setActive(false);
 
@@ -201,13 +205,10 @@ export default class ScavengerMode extends Phaser.Scene {
     const mapY = 10;
     createMiniMap(this, mapX, mapY, 100);
 
-    // Create loot crates group with proper scale
-    this.lootCrates = this.physics.add.group({
-      defaultKey: 'loot_crate',
-      defaultFrame: 0,
-      createCallback: (crate) => {
-        crate.setScale(CRATE_SCALE);
-      }
+    // FIXED: Create loot crates group with proper physics settings
+    this.lootCrates = this.physics.add.group({ 
+      immovable: true, 
+      allowGravity: false 
     });
 
     // Create exclamations group
@@ -216,8 +217,10 @@ export default class ScavengerMode extends Phaser.Scene {
     // Set up collisions
     this.physics.add.collider(this.player, this.obstacles);
     this.physics.add.collider(this.player, this.lootCrates);
+    
     // Use the imported hitCrate function when attack hitbox overlaps a crate
     this.physics.add.overlap(this.attackHitbox, this.lootCrates, this.onAttackHitCrate, null, this);
+
 
     // Add log text
     this.logText = this.add.text(
@@ -438,7 +441,7 @@ export default class ScavengerMode extends Phaser.Scene {
     ).setScrollFactor(0).setDepth(1002);
 
     // OROMOZI balance
-    this.oromoziText = this.add.text(
+       this.oromoziText = this.add.text(
       padding * 2,
       padding * 6 + barHeight * 4,
       "OROMOZI: 0",
@@ -448,7 +451,8 @@ export default class ScavengerMode extends Phaser.Scene {
 
   // Update extended HUD based on current player stats
   updateExtendedHUD() {
-    if (!this.playerStats) return;
+    if (!this.playerStats) 
+      return;
     const barWidth = 150;
 
     if (this.healthBar) {
@@ -576,14 +580,16 @@ export default class ScavengerMode extends Phaser.Scene {
 
   // Update attack hitbox position based on player direction
   updateAttackHitboxPosition() {
+    const offset = 40; // Distance from player
+    
     if (this.lastDirection === "up") {
-      this.attackHitbox.setPosition(this.player.x, this.player.y - 30);
+      this.attackHitbox.setPosition(this.player.x, this.player.y - offset);
     } else if (this.lastDirection === "down") {
-      this.attackHitbox.setPosition(this.player.x, this.player.y + 30);
+      this.attackHitbox.setPosition(this.player.x, this.player.y + offset);
     } else if (this.lastDirection === "left") {
-      this.attackHitbox.setPosition(this.player.x - 30, this.player.y);
+      this.attackHitbox.setPosition(this.player.x - offset, this.player.y);
     } else if (this.lastDirection === "right") {
-      this.attackHitbox.setPosition(this.player.x + 30, this.player.y);
+      this.attackHitbox.setPosition(this.player.x + offset, this.player.y);
     }
   }
 
@@ -595,8 +601,11 @@ export default class ScavengerMode extends Phaser.Scene {
     this.player.setVelocity(0);
     this.player.anims.play(`attack-${this.lastDirection}`, true);
 
-    // Activate attack hitbox and provide camera shake effect
+    // Position and activate attack hitbox
+    this.updateAttackHitboxPosition();
     this.attackHitbox.setActive(true);
+    
+    // Camera effect for attack
     this.cameras.main.shake(50, 0.005);
 
     // Reset attack state after animation completes
@@ -606,11 +615,34 @@ export default class ScavengerMode extends Phaser.Scene {
     });
   }
 
-  // Handle overlap between attack hitbox and loot crates
   onAttackHitCrate(hitbox, crate) {
     if (!this.isAttacking || !hitbox.active) return;
-    // Use the modular hitCrate function from inventorySystem
-    hitCrate(this, crate);
+    
+    // IMPORTANT: Import the hitCrate function to make sure it's available
+    import('../inventory/inventorySystem.js').then(module => {
+      if (module.hitCrate) {
+        module.hitCrate(this, crate);
+      } else {
+        console.error("hitCrate function not found in inventorySystem module");
+        
+        // Fallback implementation if the import fails
+        if (crate.getData('breaking')) return;
+        
+        let health = crate.getData('health') - 1;
+        crate.setData('health', health);
+        
+        // Visual feedback
+        crate.setTint(0xff9900);
+        this.time.delayedCall(100, () => crate.clearTint());
+        
+        if (health <= 0) {
+          crate.setData('breaking', true);
+          crate.destroy();
+        }
+      }
+    }).catch(error => {
+      console.error("Failed to import inventorySystem module:", error);
+    });
   }
 
   // Create player animation definitions
@@ -692,10 +724,10 @@ export default class ScavengerMode extends Phaser.Scene {
         repeat: 0
       });
 
-      // Crate breaking animation
+      // FIXED: Crate breaking animation with correct frame indices
       this.anims.create({
         key: "crate_break",
-        frames: this.anims.generateFrameNumbers("loot_crate", { start: 0, end: 4 }),
+        frames: this.anims.generateFrameNumbers("loot_crate", { start: 1, end: 4 }),
         frameRate: 10,
         repeat: 0
       });

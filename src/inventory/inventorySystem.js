@@ -74,7 +74,7 @@ export function getRandomLootForZone(scene) {
 
 // Handles loot crate logic, including visuals and loot spawning
 export function hitCrate(scene, crate) {
-  if (crate.getData('breaking')) return;
+  if (!scene || !crate || crate.getData('breaking')) return;
 
   let health = crate.getData('health') - 1;
   crate.setData('health', health);
@@ -89,14 +89,6 @@ export function hitCrate(scene, crate) {
     crate.setData('breaking', true);
     const loot = getRandomLootForZone(scene);
 
-    // Crate break animation
-  this.anims.create({
-    key: "crate_break",
-    frames: this.anims.generateFrameNumbers("loot_crate", { start: 1, end: 4 }),
-    frameRate: 10,
-    repeat: 0
-  });
-
     if (loot) {
       addToInventory(scene, loot);
       addToLog(scene, `Received: ${loot}`);
@@ -105,6 +97,7 @@ export function hitCrate(scene, crate) {
       addToLog(scene, "No loot found");
     }
 
+    // Play the animation directly - animation should be defined in ScavengerMode's create function
     crate.play('crate_break');
     crate.once('animationcomplete', () => crate.destroy());
   } else {
@@ -284,8 +277,10 @@ export function spawnOneLootCrate(scene) {
       
       crate.setData('health', health);
       crate.setData('breaking', false);
-      crate.body.setSize(64, 64);
-      crate.body.setOffset(0, 0);
+      
+      // FIXED: Use a proper collision box size that matches the visual
+      crate.body.setSize(40, 40);
+      crate.body.setOffset(12, 12); // Center the hitbox on the sprite
       
       // Add a small animation to make crates stand out
       scene.tweens.add({
