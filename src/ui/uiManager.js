@@ -43,7 +43,8 @@ export function updateHUD(scene) {
 }
 
 export function showDialog(scene, text) {
-  const boxW = 260, boxH = 200;
+  // Modified dimensions - increased height by 100 pixels
+  const boxW = 220, boxH = 250; // Changed from 150 to 250 (added 100px)
   const boxX = (scene.game.config.width - boxW) / 2;
   const boxY = (scene.game.config.height - boxH) / 2;
   
@@ -69,13 +70,6 @@ export function showDialog(scene, text) {
   
   scene.dialogText.setPosition(boxX + 10, boxY + 10);
   scene.dialogText.setText(text);
-  scene.dialogText.setStyle({
-    font: "14px Arial",
-    fill: "#ffffff",
-    wordWrap: { width: boxW - 20 },
-    stroke: "#000000",
-    strokeThickness: 3
-  });
   
   scene.dialogBg.setVisible(true);
   scene.dialogText.setVisible(true);
@@ -95,8 +89,8 @@ export function hideDialog(scene) {
 export function showModalOverlay(scene) {
   hideModalOverlay(scene);
   const modal = scene.add.rectangle(
-    scene.cameras.main.worldView.x,
-    scene.cameras.main.worldView.y,
+    0,
+    0,
     scene.cameras.main.width,
     scene.cameras.main.height,
     0x000000,
@@ -136,10 +130,16 @@ export function createFloatingText(scene, x, y, text, color = 0xffffff, fontSize
 }
 
 export function createScrollableMenu(scene, title, options) {
-  const boxW = 260, boxH = 200;
+  // Use expanded dialog dimensions
+  const boxW = 220, boxH = 250; // Changed from 150 to 250
   const boxX = (scene.game.config.width - boxW) / 2;
   const boxY = (scene.game.config.height - boxH) / 2;
-  const maxVisible = 6;
+  
+  // Define button spacing and positioning
+  const buttonStartY = boxY + 100; // Was boxY + 40, now +100 more
+  const buttonSpacing = 20;
+  const maxVisible = 5; // Limit visible options to fit dialog box
+  
   let scrollIndex = 0;
 
   showDialog(scene, `${title}\n(Use UP/DOWN to scroll, SPACE to select)`);
@@ -148,12 +148,17 @@ export function createScrollableMenu(scene, title, options) {
     clearButtons(scene);
     const visibleOptions = options.slice(scrollIndex, scrollIndex + maxVisible);
     visibleOptions.forEach((option, i) => {
-      const txt = scene.add.text(boxX + 10, boxY + 80 + i * 20, option.label, {
-        font: "14px Arial",
-        fill: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 2
-      }).setDepth(1601).setInteractive({ useHandCursor: true });
+      const txt = scene.add.text(
+        boxX + 10, 
+        buttonStartY + i * buttonSpacing, 
+        option.label, 
+        {
+          font: "14px Arial",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 2
+        }
+      ).setDepth(1601).setInteractive({ useHandCursor: true }).setScrollFactor(0);
 
       txt.on("pointerdown", option.callback);
       txt.on("pointerover", () => txt.setStyle({ fill: "#ff9900" }));
@@ -162,9 +167,35 @@ export function createScrollableMenu(scene, title, options) {
       scene.buttons = scene.buttons || [];
       scene.buttons.push(txt);
     });
+    
+    // Add scroll indicators if needed - adjust these positions too
+    if (scrollIndex > 0) {
+      const upArrow = scene.add.text(
+        boxX + boxW - 20,
+        buttonStartY - 20, // Adjust up arrow position
+        "▲",
+        { font: "16px Arial", fill: "#ffffff" }
+      ).setDepth(1601).setScrollFactor(0);
+      scene.buttons.push(upArrow);
+    }
+    
+    if (scrollIndex + maxVisible < options.length) {
+      const downArrow = scene.add.text(
+        boxX + boxW - 20,
+        buttonStartY + (maxVisible * buttonSpacing), // Adjust down arrow position
+        "▼",
+        { font: "16px Arial", fill: "#ffffff" }
+      ).setDepth(1601).setScrollFactor(0);
+      scene.buttons.push(downArrow);
+    }
   };
 
   updateMenu();
+
+  // Clean up any existing key handlers
+  scene.input.keyboard.off("keydown-UP");
+  scene.input.keyboard.off("keydown-DOWN");
+  scene.input.keyboard.off("keydown-SPACE");
 
   scene.input.keyboard.on("keydown-UP", () => {
     if (scrollIndex > 0) {
@@ -179,6 +210,14 @@ export function createScrollableMenu(scene, title, options) {
       updateMenu();
     }
   });
+
+  scene.input.keyboard.once("keydown-SPACE", () => {
+    scene.input.keyboard.off("keydown-UP");
+    scene.input.keyboard.off("keydown-DOWN");
+    if (options[scrollIndex]) {
+      options[scrollIndex].callback();
+    }
+  });
 }
 
 export function clearButtons(scene) {
@@ -191,25 +230,37 @@ export function clearButtons(scene) {
   scene.buttons = [];
 }
 
-// Create a simple set of buttons with labels and callbacks
 export function createButtons(scene, options) {
   clearButtons(scene);
-  const boxW = 260, boxH = 200;
+  
+  // Use expanded dialog dimensions
+  const boxW = 220, boxH = 250; // Changed from 150 to 250
   const boxX = (scene.game.config.width - boxW) / 2;
   const boxY = (scene.game.config.height - boxH) / 2;
+  
+  // Define button spacing and positioning
+  const buttonStartY = boxY + 150; // Was boxY + 50, now +100 more
+  const buttonSpacing = 20;
   
   scene.buttons = scene.buttons || [];
   
   options.forEach((option, i) => {
-    const btn = scene.add.text(boxX + 10, boxY + 80 + i * 25, option.label, { 
-      font: "14px Arial", 
-      fill: "#ffff00",
-      stroke: "#000000",
-      strokeThickness: 2
-    });
+    const btn = scene.add.text(
+      boxX + 10, 
+      buttonStartY + i * buttonSpacing, 
+      option.label, 
+      { 
+        font: "14px Arial", 
+        fill: option.highlight ? "#00ffff" : "#ffff00",
+        stroke: "#000000",
+        strokeThickness: 2,
+        fontSize: option.highlight ? "16px" : "14px"
+      }
+    );
     
     btn.setDepth(1601);
     btn.setInteractive({ useHandCursor: true });
+    btn.setScrollFactor(0);
     
     // Add button effects
     btn.on("pointerover", () => {
@@ -218,7 +269,10 @@ export function createButtons(scene, options) {
     });
     
     btn.on("pointerout", () => {
-      btn.setStyle({ fill: "#ffff00" });
+      btn.setStyle({ 
+        fill: option.highlight ? "#00ffff" : "#ffff00",
+        fontSize: option.highlight ? "16px" : "14px"
+      });
       btn.setScale(1);
     });
     
@@ -228,6 +282,5 @@ export function createButtons(scene, options) {
     });
     
     scene.buttons.push(btn);
-    btn.setScrollFactor(0);
   });
 }

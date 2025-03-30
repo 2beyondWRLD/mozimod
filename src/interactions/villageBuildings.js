@@ -2,7 +2,7 @@
 
 import { showDialog, hideDialog, createScrollableMenu, clearButtons, showModalOverlay, hideModalOverlay, createButtons } from '../ui/uiManager.js';
 import { createSimpleEffect, addToInventory, removeFromInventory, getItemData, getRandomLootForZone, getAllLootItems } from '../inventory/inventorySystem.js';
-import { SCREEN_LIQUIDITY, SCREEN_MERCHANT, SCREEN_ROYAL, SCREEN_TINKER, SCREEN_CRAFT, SCREEN_TRADING } from './interactionManager.js';
+import { SCREEN_LIQUIDITY, SCREEN_MERCHANT, SCREEN_ROYAL, SCREEN_TINKER, SCREEN_CRAFT, SCREEN_TRADING, SCREEN_NONE } from './interactionManager.js';
 
 // Merchant Quarter
 export function showMerchantQuarterOptions(scene) {

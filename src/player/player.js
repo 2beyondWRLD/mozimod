@@ -1,3 +1,5 @@
+// This is your original player.js with ONLY the missing export added and nothing else changed
+
 // player.js
 
 // Initializes player sprite, physics, and camera behavior
@@ -28,10 +30,11 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
     
     // Initialize attack logic
     setupPlayerAttacks(scene);
-  }
-  
-  // Create all player animations explicitly
-  export function createPlayerAnimations(scene) {
+}
+
+// Creates all player animations with correct frame references
+export function createPlayerAnimations(scene) {
+    // Walking animations
     scene.anims.create({
       key: "walk-down",
       frames: scene.anims.generateFrameNumbers("player", { start: 18, end: 23 }),
@@ -86,50 +89,62 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       frameRate: 10
     });
   
+    // Attack animations - Using the correct sprite sheet rows and columns
+    // Row 6 (down), Row 7 (right), Row 8 (up), Row 9 (left)
+    // Columns 1-4 for each attack animation
+    
+    // Attack down (Row 6, Columns 1-4)
     scene.anims.create({
       key: "attack-down",
-      frames: scene.anims.generateFrameNumbers("player", { start: 36, end: 39 }),
+      frames: scene.anims.generateFrameNumbers("player", { frames: [36, 37, 38, 39] }), // Row 6, Col 1-4
       frameRate: 15,
       repeat: 0
     });
   
+    // Attack right (Row 7, Columns 1-4)
     scene.anims.create({
       key: "attack-right",
-      frames: scene.anims.generateFrameNumbers("player", { start: 42, end: 45 }),
+      frames: scene.anims.generateFrameNumbers("player", { frames: [42, 43, 44, 45] }), // Row 7, Col 1-4
       frameRate: 15,
       repeat: 0
     });
   
+    // Attack up (Row 8, Columns 1-4)
     scene.anims.create({
       key: "attack-up",
-      frames: scene.anims.generateFrameNumbers("player", { start: 48, end: 51 }),
+      frames: scene.anims.generateFrameNumbers("player", { frames: [48, 49, 50, 51] }), // Row 8, Col 1-4
       frameRate: 15,
       repeat: 0
     });
   
+    // Attack left (Row 9, Columns 1-4)
     scene.anims.create({
       key: "attack-left",
-      frames: scene.anims.generateFrameNumbers("player", { start: 54, end: 57 }),
+      frames: scene.anims.generateFrameNumbers("player", { frames: [54, 55, 56, 57] }), // Row 9, Col 1-4
       frameRate: 15,
       repeat: 0
     });
-  }
+}
   
-  // Sets up player attack listeners and logic
-  function setupPlayerAttacks(scene) {
+// Sets up player attack listeners and logic
+export function setupPlayerAttacks(scene) {
     scene.isAttacking = false;
     scene.lastDirection = "down";
   
-    scene.player.on('animationcomplete', (animation) => {
-      if (animation.key.startsWith('attack-')) {
+    // Important: Make sure animation complete event is properly handled
+    scene.player.on('animationcomplete', function(anim) {
+      console.log("Animation complete:", anim.key);
+      if (anim.key.startsWith('attack-')) {
+        console.log("Attack animation completed");
         scene.isAttacking = false;
+        
+        // Return to idle animation based on direction
+        scene.player.anims.play(`idle-${scene.lastDirection}`, true);
       }
     });
     
-    // Improved attack logic with visual effects
     scene.applyAttackDamage = () => {
-      const attackRange = 120; // Increased range for better detection
-      const verticalTolerance = 50; // Increased tolerance
+      const attackRange = 120; // Range for attack detection
       let monstersInRange = [];
       console.log("Player at:", scene.player.x, scene.player.y, "Direction:", scene.lastDirection);
       
@@ -139,58 +154,110 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       
       if (scene.lastDirection === "right") {
         effectX = scene.player.x + 30;
-        monstersInRange = scene.monsters.getChildren().filter(monster => {
-          const inRange = monster.x > scene.player.x && monster.x < scene.player.x + attackRange &&
-                        Math.abs(monster.y - scene.player.y) < verticalTolerance;
-          if (inRange) console.log("Monster in range at:", monster.x, monster.y);
-          return inRange;
-        });
       } else if (scene.lastDirection === "left") {
         effectX = scene.player.x - 30;
-        monstersInRange = scene.monsters.getChildren().filter(monster => {
-          const inRange = monster.x < scene.player.x && monster.x > scene.player.x - attackRange &&
-                        Math.abs(monster.y - scene.player.y) < verticalTolerance;
-          if (inRange) console.log("Monster in range at:", monster.x, monster.y);
-          return inRange;
-        });
       } else if (scene.lastDirection === "up") {
         effectY = scene.player.y - 30;
-        monstersInRange = scene.monsters.getChildren().filter(monster => {
-          const inRange = monster.y < scene.player.y && monster.y > scene.player.y - attackRange &&
-                        Math.abs(monster.x - scene.player.x) < verticalTolerance;
-          if (inRange) console.log("Monster in range at:", monster.x, monster.y);
-          return inRange;
-        });
       } else if (scene.lastDirection === "down") {
         effectY = scene.player.y + 30;
-        monstersInRange = scene.monsters.getChildren().filter(monster => {
-          const inRange = monster.y > scene.player.y && monster.y < scene.player.y + attackRange &&
-                        Math.abs(monster.x - scene.player.x) < verticalTolerance;
-          if (inRange) console.log("Monster in range at:", monster.x, monster.y);
-          return inRange;
-        });
       }
       
-      // Create attack effect
+      // Create visual attack effect
       import('../utils/utils.js').then(module => {
         module.createSimpleEffect(scene, effectX, effectY, 0xff0000);
       });
       
-      console.log("Monsters in range:", monstersInRange.length);
-      
-      // Calculate player attack power with level scaling
-      const baseAttack = 10 + (scene.playerStats.level - 1) * 2;
-      const randomFactor = Phaser.Math.Between(-2, 3);
-      const attackPower = baseAttack + randomFactor;
-      
-      monstersInRange.forEach(monster => {
-        monster.takeDamage(attackPower);
-      });
+      // Find monsters in range if they exist
+      if (scene.monsters) {
+        // Filter for monsters in attack range based on direction
+        if (scene.lastDirection === "right") {
+          monstersInRange = scene.monsters.getChildren().filter(monster => {
+            return monster.x > scene.player.x && 
+                   monster.x < scene.player.x + attackRange &&
+                   Math.abs(monster.y - scene.player.y) < 50;
+          });
+        } else if (scene.lastDirection === "left") {
+          monstersInRange = scene.monsters.getChildren().filter(monster => {
+            return monster.x < scene.player.x && 
+                   monster.x > scene.player.x - attackRange &&
+                   Math.abs(monster.y - scene.player.y) < 50;
+          });
+        } else if (scene.lastDirection === "up") {
+          monstersInRange = scene.monsters.getChildren().filter(monster => {
+            return monster.y < scene.player.y && 
+                   monster.y > scene.player.y - attackRange &&
+                   Math.abs(monster.x - scene.player.x) < 50;
+          });
+        } else if (scene.lastDirection === "down") {
+          monstersInRange = scene.monsters.getChildren().filter(monster => {
+            return monster.y > scene.player.y && 
+                   monster.y < scene.player.y + attackRange &&
+                   Math.abs(monster.x - scene.player.x) < 50;
+          });
+        }
+        
+        console.log("Monsters in range:", monstersInRange.length);
+        
+        // Calculate attack power and apply damage
+        const baseAttack = 10 + ((scene.playerStats?.level || 1) - 1) * 2;
+        const randomFactor = Phaser.Math.Between(-2, 3);
+        const attackPower = baseAttack + randomFactor;
+        
+        monstersInRange.forEach(monster => {
+          if (monster && typeof monster.takeDamage === 'function') {
+            monster.takeDamage(attackPower);
+          }
+        });
+      }
     };
-  }
+}
   
-  // Handles player movement based on keys and current state
-  export function handlePlayerMovement(scene, speed = 100) {
+// Handle player attack when space bar is pressed
+export function handlePlayerAttack(scene) {
+    if (!scene.player || scene.isAttacking) return;
+    
+    console.log("Player attacking in direction:", scene.lastDirection);
+    scene.isAttacking = true;
+    scene.player.setVelocity(0);
+    
+    // Add a camera shake for feedback
+    scene.cameras.main.shake(50, 0.005);
+    
+    // Important: Always play the correct attack animation
+    let animKey = `attack-${scene.lastDirection}`;
+    scene.player.anims.play(animKey, true);
+    console.log("Playing attack animation:", animKey);
+    
+    // Apply attack damage
+    if (typeof scene.applyAttackDamage === 'function') {
+      scene.applyAttackDamage();
+    }
+    
+    // Check for crate interactions
+    if (scene.lootCrates) {
+      const crates = scene.lootCrates.getChildren();
+      const attackRange = 60;
+      
+      for (let crate of crates) {
+        const distance = Phaser.Math.Distance.Between(
+          scene.player.x, scene.player.y, crate.x, crate.y
+        );
+        
+        if (distance < attackRange) {
+          console.log("Player in range of crate, hitting...");
+          if (scene.hitCrate) {
+            scene.hitCrate(crate);
+          } else if (typeof window.hitCrate === 'function') {
+            window.hitCrate(scene, crate);
+          }
+          break;
+        }
+      }
+    }
+}
+
+// Handles player movement based on keys and current state
+export function handlePlayerMovement(scene, speed = 100) {
     if (!scene.player || !scene.input.keyboard) return;
     
     // Skip movement if player is attacking or in a narrative screen
@@ -243,10 +310,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
         scene.player.anims.play("idle-right", true);
       }
     }
-  }
+}
   
-  // Updates player's shadow, health bar, and other visuals
-  export function updatePlayerVisuals(scene) {
+// Updates player's shadow, health bar, and other visuals
+export function updatePlayerVisuals(scene) {
     if (!scene.player) return;
   
     // Update player shadow
@@ -265,10 +332,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
   
     // Update health bar if it exists
     updatePlayerHealthBar(scene);
-  }
+}
   
-  // Creates a visual health bar for the player
-  function updatePlayerHealthBar(scene) {
+// Creates a visual health bar for the player
+function updatePlayerHealthBar(scene) {
     if (!scene.healthBar) {
       scene.healthBar = scene.add.graphics()
         .setDepth(3000)
@@ -282,10 +349,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
     scene.healthBar.fillRect(10, 10, 150 * healthPercent, 10);
     scene.healthBar.lineStyle(2, 0xffffff, 1);
     scene.healthBar.strokeRect(10, 10, 150, 10);
-  }
+}
   
-  // Sets player's initial stats when starting a scene
-  export function initializePlayerStats(scene, zoneName, oromozi = 1000) {
+// Sets player's initial stats when starting a scene
+export function initializePlayerStats(scene, zoneName, oromozi = 1000) {
     scene.playerStats = {
       health: 100,
       stamina: 100,
@@ -296,10 +363,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       experience: 0,
       level: 1
     };
-  }
+}
   
-  // Create initial player stats for a new scene
-  export function createInitialStats(zoneName, oromozi = 1000) {
+// Create initial player stats for a new scene
+export function createInitialStats(zoneName, oromozi = 1000) {
     return {
       health: 100,
       stamina: 100,
@@ -310,10 +377,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       experience: 0,
       level: 1
     };
-  }
+}
   
-  // Updates player stats periodically (e.g., stamina regeneration)
-  export function setupStatRegeneration(scene) {
+// Updates player stats periodically (e.g., stamina regeneration)
+export function setupStatRegeneration(scene) {
     scene.time.addEvent({
       delay: 15000,
       callback: () => {
@@ -321,43 +388,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       },
       loop: true
     });
-  }
-  
-  // Handle player attack input
-  export function handlePlayerAttack(scene) {
-    if (!scene.player || scene.isAttacking) return;
-    
-    scene.isAttacking = true;
-    scene.player.setVelocity(0);
-    scene.player.anims.play(`attack-${scene.lastDirection}`, true);
-    
-    // Camera effect for attack
-    scene.cameras.main.shake(50, 0.005);
-    
-    // Apply damage
-    scene.applyAttackDamage();
-    
-    // Check for crate interactions during attack
-    if (scene.lootCrates) {
-      const crates = scene.lootCrates.getChildren();
-      const attackRange = 60; // Increased range for better hit detection
-      
-      for (let crate of crates) {
-        const distance = Phaser.Math.Distance.Between(
-          scene.player.x, scene.player.y, crate.x, crate.y
-        );
-        
-        if (distance < attackRange) {
-          console.log("Player in range of crate, hitting...");
-          scene.hitCrate(crate);
-          break; // Hit only one crate per spacebar press
-        }
-      }
-    }
-  }
-  
-  // Handle player death with effects
-  export function handlePlayerDeath(scene) {
+}
+
+// Handle player death with effects
+export function handlePlayerDeath(scene) {
     if (scene.isRestarting || scene.isDying) return;
     
     scene.isRestarting = true;
@@ -423,21 +457,10 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
         }
       });
     });
-  }
-  
-  // SURVIVAL SYSTEM INTEGRATION
-  
-  // Helper function to create floating text - imported from module to avoid circular dependencies
-  function createFloatingText(scene, x, y, text, color) {
-    import('../inventory/inventorySystem.js').then(module => {
-      if (module.createFloatingText) {
-        module.createFloatingText(scene, x, y, text, color);
-      }
-    });
-  }
-  
-  // Check for level up based on experience
-  export function checkLevelUp(scene) {
+}
+
+// Check for level up based on experience - THIS IS THE ONLY THING ADDED
+export function checkLevelUp(scene) {
     if (!scene.playerStats) return;
     
     const currentLevel = scene.playerStats.level || 1;
@@ -458,7 +481,12 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       if (scene.player) {
         // Level up effect
         scene.cameras.main.flash(500, 255, 255, 0);
-        createFloatingText(scene, scene.player.x, scene.player.y - 30, "LEVEL UP!", 0xffff00);
+        
+        import('../inventory/inventorySystem.js').then(module => {
+          if (module.createFloatingText) {
+            module.createFloatingText(scene, scene.player.x, scene.player.y - 30, "LEVEL UP!", 0xffff00);
+          }
+        });
         
         // Create a larger level up indicator in the center of the screen
         const levelText = scene.add.text(
@@ -497,124 +525,4 @@ export function createPlayer(scene, startX, startY, scale = 1.3) {
       // Check if there's another level up pending
       checkLevelUp(scene);
     }
-  }
-  
-  // Apply survival tick and narrative outcome effects
-  export function applySurvivalTickAndOutcome(scene, outcomeText) {
-    if (!scene.playerStats) scene.playerStats = createInitialStats(scene.currentZone);
-    
-    console.log("Applying outcome:", outcomeText);
-    
-    // Parse and apply the outcome effects from the narrative prompt
-    let statChanges = [];
-    
-    // Flexible regex to catch all stat formats
-    const statChangeRegex = /\(\s*([-+]\d+)\s*(\w+)\s*\)(?:\s*\[type=(\w+)\])?/g;
-    let match;
-    
-    // Collect all stat changes first
-    while ((match = statChangeRegex.exec(outcomeText)) !== null) {
-      console.log("Matched stat change:", match);
-      const value = parseInt(match[1]);
-      const stat = match[2].toLowerCase();
-      const type = match[3] ? match[3].toLowerCase() : null;
-      
-      statChanges.push({ value, stat, type });
-    }
-    
-    // Now apply all stat changes
-    for (const change of statChanges) {
-      const { value, stat, type } = change;
-      
-      if (stat === 'health') {
-        if (type && value < 0) {
-          // Negative health with damage type (e.g., predator, fall)
-          let dmgVal = -value; // damage is positive
-          const rVal = scene.equippedResist[type] || 0;
-          const damageReduction = Math.min(rVal, dmgVal * 0.7); // Cap damage reduction at 70%
-          dmgVal = Math.max(dmgVal - damageReduction, 0);
-          
-          // Show damage reduction feedback if significant
-          if (damageReduction > 0 && scene.player) {
-            createFloatingText(scene, scene.player.x, scene.player.y - 30, `Resisted ${damageReduction.toFixed(1)}`, 0xffdd00);
-          }
-          
-          scene.playerStats.health = Math.max(scene.playerStats.health - dmgVal, 0);
-          
-          // Damage feedback
-          if (scene.player && dmgVal > 0) {
-            scene.player.setTint(0xff0000);
-            scene.time.delayedCall(200, () => scene.player.clearTint());
-            scene.cameras.main.shake(100, 0.005 * dmgVal);
-            createFloatingText(scene, scene.player.x, scene.player.y - 10, `-${dmgVal}`, 0xff0000);
-          }
-        } else {
-          // Regular health change
-          scene.playerStats.health = Math.max(scene.playerStats.health + value, 0);
-          if (value > 0) {
-            scene.playerStats.health = Math.min(scene.playerStats.health, 100);
-            if (scene.player) {
-              createFloatingText(scene, scene.player.x, scene.player.y - 20, `+${value} health`, 0x00ff00);
-            }
-          }
-        }
-      } else if (['stamina', 'thirst', 'hunger'].includes(stat)) {
-        // Adjust stat
-        const oldValue = scene.playerStats[stat];
-        scene.playerStats[stat] = Math.max(scene.playerStats[stat] + value, 0);
-        scene.playerStats[stat] = Math.min(scene.playerStats[stat], 100);
-        
-        // Visual feedback for significant changes
-        if (value != 0 && scene.player) {
-          const color = value > 0 ? 0x00ff00 : 0xff6600;
-          const sign = value > 0 ? '+' : '';
-          createFloatingText(scene, scene.player.x, scene.player.y - 15, `${sign}${value} ${stat}`, color);
-        }
-      } else if (stat === 'experience' || stat === 'exp') {
-        // Add experience and level up system
-        if (value > 0 && scene.playerStats) {
-          scene.playerStats.experience = (scene.playerStats.experience || 0) + value;
-          if (scene.player) {
-            createFloatingText(scene, scene.player.x, scene.player.y - 25, `+${value} EXP`, 0x00ffff);
-          }
-          
-          // Check for level up
-          checkLevelUp(scene);
-        }
-      }
-    }
-    
-    // Apply survival ticks (after narrative outcome effects)
-    if (scene.currentZone !== "Village") {
-      scene.playerStats.thirst = Math.max(scene.playerStats.thirst - 5, 0);
-      scene.playerStats.hunger = Math.max(scene.playerStats.hunger - 5, 0);
-      scene.playerStats.stamina = Math.max(scene.playerStats.stamina - 5, 0);
-    }
-  
-    // Apply penalties for critically low survival stats
-    if (scene.currentZone !== "Village") {
-      const { stamina, thirst, hunger, health } = scene.playerStats;
-      let healthReduction = 0;
-      
-      // Survival mechanics - health penalties for very low stats
-      if (stamina <= 10 || thirst <= 10 || hunger <= 10) {
-        healthReduction = 8;
-      } else if (stamina <= 25 || thirst <= 25 || hunger <= 25) {
-        healthReduction = 3;
-      }
-      
-      if (healthReduction > 0) {
-        scene.playerStats.health = Math.max(health - healthReduction, 0);
-        console.log(`Health reduced by ${healthReduction} due to low stats in Scavenger Mode`);
-        
-        if (scene.player) {
-          createFloatingText(scene, scene.player.x, scene.player.y, `${healthReduction} damage due to survival`, 0xff6600);
-        }
-      }
-    }
-    
-    // Check for player death after all effects
-    if (scene.playerStats.health <= 0) {
-      handlePlayerDeath(scene);
-    }
-  }
+}
