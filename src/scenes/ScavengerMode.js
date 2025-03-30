@@ -221,7 +221,6 @@ export default class ScavengerMode extends Phaser.Scene {
     // Use the imported hitCrate function when attack hitbox overlaps a crate
     this.physics.add.overlap(this.attackHitbox, this.lootCrates, this.onAttackHitCrate, null, this);
 
-
     // Add log text
     this.logText = this.add.text(
       10, 
@@ -235,6 +234,11 @@ export default class ScavengerMode extends Phaser.Scene {
 
     // Initialize narrative system
     initializeNarrative(this);
+    
+    // Make sure narrative data is loaded
+    this.narrativePrologues = this.cache.json.get("narrativePrologues");
+    this.narrativeData = this.cache.json.get("narrativePrompts");
+    console.log("Narrative data loaded:", !!this.narrativeData, !!this.narrativePrologues);
 
     // Spawn loot crates and exclamation points after a short delay
     this.time.delayedCall(500, () => {
@@ -529,7 +533,7 @@ export default class ScavengerMode extends Phaser.Scene {
 
   // Handle player movement based on input
   handlePlayerMovement() {
-    const speed = 100;
+    const speed = 70;
     this.player.setVelocity(0);
 
     // Left movement
@@ -615,38 +619,27 @@ export default class ScavengerMode extends Phaser.Scene {
     });
   }
 
+  // UPDATED: Simplified to use the imported hitCrate function directly
   onAttackHitCrate(hitbox, crate) {
     if (!this.isAttacking || !hitbox.active) return;
     
-    // IMPORTANT: Import the hitCrate function to make sure it's available
-    import('../inventory/inventorySystem.js').then(module => {
-      if (module.hitCrate) {
-        module.hitCrate(this, crate);
-      } else {
-        console.error("hitCrate function not found in inventorySystem module");
-        
-        // Fallback implementation if the import fails
-        if (crate.getData('breaking')) return;
-        
-        let health = crate.getData('health') - 1;
-        crate.setData('health', health);
-        
-        // Visual feedback
-        crate.setTint(0xff9900);
-        this.time.delayedCall(100, () => crate.clearTint());
-        
-        if (health <= 0) {
-          crate.setData('breaking', true);
-          crate.destroy();
-        }
-      }
-    }).catch(error => {
-      console.error("Failed to import inventorySystem module:", error);
-    });
+    // Use the imported hitCrate function directly
+    hitCrate(this, crate);
   }
 
-  // Create player animation definitions
   createPlayerAnimations() {
+    // Always create the crate breaking animation regardless of other animations
+    if (!this.anims.exists('crate_break')) {
+      this.anims.create({
+        key: "crate_break",
+        frames: this.anims.generateFrameNumbers("loot_crate", { start: 1, end: 4 }),
+        frameRate: 10,
+        repeat: 0
+      });
+      console.log("Crate break animation created");
+    }
+  
+    // Only create player animations if they don't exist
     if (!this.anims.exists('walk-down')) {
       // Walking animations
       this.anims.create({
@@ -673,7 +666,7 @@ export default class ScavengerMode extends Phaser.Scene {
         frameRate: 10,
         repeat: -1
       });
-
+  
       // Idle animations
       this.anims.create({
         key: "idle-down",
@@ -697,7 +690,7 @@ export default class ScavengerMode extends Phaser.Scene {
         frames: [{ key: "player", frame: 6 }],
         frameRate: 10
       });
-
+  
       // Attack animations
       this.anims.create({
         key: "attack-down",
@@ -723,16 +716,10 @@ export default class ScavengerMode extends Phaser.Scene {
         frameRate: 15,
         repeat: 0
       });
-
-      // FIXED: Crate breaking animation with correct frame indices
-      this.anims.create({
-        key: "crate_break",
-        frames: this.anims.generateFrameNumbers("loot_crate", { start: 1, end: 4 }),
-        frameRate: 10,
-        repeat: 0
-      });
     }
   }
+      
+      
 
   // Handle zone change when pressing the Z key
   handleZoneChange() {
